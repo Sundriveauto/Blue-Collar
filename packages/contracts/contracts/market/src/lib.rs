@@ -73,6 +73,24 @@ pub struct Escrow {
     pub released: bool,
     /// `true` once funds have been refunded to `from`.
     pub cancelled: bool,
+    /// `true` if arbitration has been requested.
+    pub arbitration_requested: bool,
+}
+
+/// Arbitration record for a disputed escrow.
+#[contracttype]
+#[derive(Clone)]
+pub struct Arbitration {
+    /// Escrow id being arbitrated.
+    pub escrow_id: Symbol,
+    /// Address that requested arbitration.
+    pub requester: Address,
+    /// Assigned arbitrator address.
+    pub arbitrator: Address,
+    /// Arbitration fee paid by requester.
+    pub fee: i128,
+    /// `true` once arbitrator has made a decision.
+    pub resolved: bool,
 }
 
 /// Multi-signature escrow requiring `threshold` approvals before funds are released.
@@ -117,6 +135,10 @@ pub enum DataKey {
     Escrow(Symbol),
     /// Persistent storage — [`MultiSigEscrow`] keyed by a caller-supplied id [`Symbol`].
     MultiSigEscrow(Symbol),
+    /// Persistent storage — [`Arbitration`] keyed by escrow id [`Symbol`].
+    Arbitration(Symbol),
+    /// Persistent storage — list of approved arbitrator addresses.
+    Arbitrators,
 }
 
 // =============================================================================
@@ -442,6 +464,7 @@ impl MarketContract {
             expiry,
             released: false,
             cancelled: false,
+            arbitration_requested: false,
         };
         env.storage().persistent().set(&DataKey::Escrow(id.clone()), &escrow);
 
@@ -714,6 +737,136 @@ impl MarketContract {
     /// Fetch multi-sig escrow details by id.
     pub fn get_multisig_escrow(env: Env, id: Symbol) -> Option<MultiSigEscrow> {
         env.storage().persistent().get(&DataKey::MultiSigEscrow(id))
+    }
+
+    // -------------------------------------------------------------------------
+    // Arbitration (#377)
+    // -------------------------------------------------------------------------
+
+    /// Add an arbitrator address (admin only).
+    pub fn add_arbitrator(env: Env, admin: Address, arbitrator: Address) {
+        Self::require_role(&env, &Symbol::new(&env, ROLE_ADMIN), &admin);
+        let mut arbitrators: Vec<Address> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Arbitrators)
+            .unwrap_or(Vec::new(&env));
+        if arbitrators.iter().all(|a| a != arbitrator) {
+            arbitrators.push_back(arbitrator.clone());
+            env.storage().persistent().set(&DataKey::Arbitrators, &arbitrators);
+        }
+        env.events().publish((symbol_short!("ArbAdd"), admin, arbitrator), ());
+    }
+
+    /// Remove an arbitrator address (admin only).
+    pub fn remove_arbitrator(env: Env, admin: Address, arbitrator: Address) {
+        Self::require_role(&env, &Symbol::new(&env, ROLE_ADMIN), &admin);
+        let arbitrators: Vec<Address> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Arbitrators)
+            .unwrap_or(Vec::new(&env));
+        let mut updated: Vec<Address> = Vec::new(&env);
+        for a in arbitrators.iter() {
+            if a != arbitrator {
+                updated.push_back(a);
+            }
+        }
+        env.storage().persistent().set(&DataKey::Arbitrators, &updated);
+        env.events().publish((symbol_short!("ArbRem"), admin, arbitrator), ());
+    }
+
+    /// Request arbitration for a disputed escrow.
+    pub fn request_arbitration(
+        env: Env,
+        escrow_id: Symbol,
+        caller: Address,
+        arbitrator: Address,
+        fee: i128,
+    ) {
+        caller.require_auth();
+        let mut escrow: Escrow = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Escrow(escrow_id.clone()))
+            .expect("Escrow not found");
+        assert!(!escrow.released && !escrow.cancelled, "Escrow finalized");
+        assert!(!escrow.arbitration_requested, "Arbitration already requested");
+        assert!(escrow.from == caller || escrow.to == caller, "Not authorized");
+
+        let arbitrators: Vec<Address> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Arbitrators)
+            .unwrap_or(Vec::new(&env));
+        assert!(arbitrators.iter().any(|a| a == arbitrator), "Invalid arbitrator");
+
+        let client = token::Client::new(&env, &escrow.token);
+        client.transfer(&caller, &arbitrator, &fee);
+
+        escrow.arbitration_requested = true;
+        env.storage().persistent().set(&DataKey::Escrow(escrow_id.clone()), &escrow);
+
+        let arbitration = Arbitration {
+            escrow_id: escrow_id.clone(),
+            requester: caller.clone(),
+            arbitrator: arbitrator.clone(),
+            fee,
+            resolved: false,
+        };
+        env.storage().persistent().set(&DataKey::Arbitration(escrow_id.clone()), &arbitration);
+
+        env.events().publish(
+            (symbol_short!("ArbReq"), escrow_id, caller),
+            (arbitrator, fee),
+        );
+    }
+
+    /// Resolve arbitration by releasing funds to winner.
+    pub fn resolve_arbitration(
+        env: Env,
+        escrow_id: Symbol,
+        arbitrator: Address,
+        release_to_worker: bool,
+    ) {
+        arbitrator.require_auth();
+        let mut arbitration: Arbitration = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Arbitration(escrow_id.clone()))
+            .expect("Arbitration not found");
+        assert!(arbitration.arbitrator == arbitrator, "Not the arbitrator");
+        assert!(!arbitration.resolved, "Already resolved");
+
+        let mut escrow: Escrow = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Escrow(escrow_id.clone()))
+            .expect("Escrow not found");
+
+        let client = token::Client::new(&env, &escrow.token);
+        let recipient = if release_to_worker { &escrow.to } else { &escrow.from };
+        client.transfer(&env.current_contract_address(), recipient, &escrow.amount);
+
+        if release_to_worker {
+            escrow.released = true;
+        } else {
+            escrow.cancelled = true;
+        }
+        arbitration.resolved = true;
+
+        env.storage().persistent().set(&DataKey::Escrow(escrow_id.clone()), &escrow);
+        env.storage().persistent().set(&DataKey::Arbitration(escrow_id.clone()), &arbitration);
+
+        env.events().publish(
+            (symbol_short!("ArbRes"), escrow_id, arbitrator),
+            release_to_worker,
+        );
+    }
+
+    /// Get arbitration details for an escrow.
+    pub fn get_arbitration(env: Env, escrow_id: Symbol) -> Option<Arbitration> {
+        env.storage().persistent().get(&DataKey::Arbitration(escrow_id))
     }
 
     // -------------------------------------------------------------------------

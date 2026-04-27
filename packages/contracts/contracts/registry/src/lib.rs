@@ -116,6 +116,32 @@ pub struct Delegate {
     pub expires_at: u64,
 }
 
+/// Performance metrics for a worker (#378).
+#[contracttype]
+#[derive(Clone)]
+pub struct PerformanceMetrics {
+    /// Total number of jobs completed.
+    pub jobs_completed: u32,
+    /// Average rating (0-10000 basis points).
+    pub avg_rating: u32,
+    /// Total number of ratings received.
+    pub total_ratings: u32,
+    /// Last update timestamp.
+    pub last_updated: u64,
+    /// Performance score (calculated from metrics).
+    pub performance_score: u32,
+}
+
+/// Delegate authorization for a worker.
+#[contracttype]
+#[derive(Clone)]
+pub struct Delegate {
+    /// Delegate address.
+    pub address: Address,
+    /// Expiry timestamp (0 = no expiry).
+    pub expires_at: u64,
+}
+
 /// On-chain record of a curator verifying a worker's category.
 #[contracttype]
 #[derive(Clone)]
@@ -168,14 +194,22 @@ pub struct StakeInfo {
     pub last_reward_ledger: u64,
 }
 
-/// Delegate record for a worker.
+/// Badge awarded to a worker for achievements (#380).
 #[contracttype]
 #[derive(Clone)]
-pub struct Delegate {
-    /// Address of the delegate.
-    pub address: Address,
-    /// Unix timestamp when this delegation expires.
+pub struct Badge {
+    /// Badge identifier.
+    pub id: Symbol,
+    /// Badge name/title.
+    pub name: String,
+    /// Issuer address (admin or curator).
+    pub issuer: Address,
+    /// Timestamp when badge was awarded.
+    pub awarded_at: u64,
+    /// Expiry timestamp (0 = no expiry).
     pub expires_at: u64,
+    /// Whether badge is currently active.
+    pub active: bool,
 }
 
 /// Result of a single registration attempt in [`RegistryContract::batch_register`].
@@ -220,8 +254,14 @@ pub enum DataKey {
     CategoryVerification(Symbol, Symbol),
     /// Persistent storage — [`StakeInfo`] keyed by worker id.
     StakeInfo(Symbol),
-    /// Persistent storage — [`Delegate`] list keyed by worker id.
+    /// Persistent storage — [`PerformanceMetrics`] keyed by worker id.
+    PerformanceMetrics(Symbol),
+    /// Persistent storage — list of delegate addresses for a worker.
     Delegates(Symbol),
+    /// Persistent storage — list of badges for a worker.
+    WorkerBadges(Symbol),
+    /// Persistent storage — individual badge keyed by (worker_id, badge_id).
+    Badge(Symbol, Symbol),
     /// Persistent storage — [`WorkerSubscription`] keyed by worker id.
     Subscription(Symbol),
 }
@@ -1575,6 +1615,191 @@ impl RegistryContract {
     /// Get staking info for a worker.
     pub fn get_stake_info(env: Env, worker_id: Symbol) -> Option<StakeInfo> {
         env.storage().persistent().get(&DataKey::StakeInfo(worker_id))
+    }
+
+    // -------------------------------------------------------------------------
+    // Performance Metrics (#378)
+    // -------------------------------------------------------------------------
+
+    /// Update performance metrics for a worker.
+    pub fn update_metrics(
+        env: Env,
+        admin: Address,
+        worker_id: Symbol,
+        jobs_completed: u32,
+        rating: u32,
+    ) {
+        Self::require_role(&env, &Symbol::new(&env, ROLE_REP_MGR), &admin);
+        assert!(rating <= 10_000, "Rating out of range");
+
+        let mut metrics: PerformanceMetrics = env
+            .storage()
+            .persistent()
+            .get(&DataKey::PerformanceMetrics(worker_id.clone()))
+            .unwrap_or(PerformanceMetrics {
+                jobs_completed: 0,
+                avg_rating: 0,
+                total_ratings: 0,
+                last_updated: 0,
+                performance_score: 0,
+            });
+
+        metrics.jobs_completed = jobs_completed;
+        if rating > 0 {
+            let total = metrics.avg_rating as u64 * metrics.total_ratings as u64 + rating as u64;
+            metrics.total_ratings += 1;
+            metrics.avg_rating = (total / metrics.total_ratings as u64) as u32;
+        }
+        metrics.last_updated = env.ledger().timestamp();
+        metrics.performance_score = Self::calculate_performance_score(&metrics);
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::PerformanceMetrics(worker_id.clone()), &metrics);
+
+        env.events().publish(
+            (symbol_short!("MetUpd"), worker_id),
+            (jobs_completed, metrics.avg_rating, metrics.performance_score),
+        );
+    }
+
+    /// Calculate performance score from metrics.
+    fn calculate_performance_score(metrics: &PerformanceMetrics) -> u32 {
+        if metrics.total_ratings == 0 {
+            return 0;
+        }
+        let rating_weight = 70u32;
+        let completion_weight = 30u32;
+        let rating_score = (metrics.avg_rating * rating_weight) / 100;
+        let completion_score = metrics.jobs_completed.min(100) * completion_weight;
+        rating_score + completion_score
+    }
+
+    /// Get performance metrics for a worker.
+    pub fn get_metrics(env: Env, worker_id: Symbol) -> Option<PerformanceMetrics> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::PerformanceMetrics(worker_id))
+    }
+
+    // -------------------------------------------------------------------------
+    // Badge System (#380)
+    // -------------------------------------------------------------------------
+
+    /// Award a badge to a worker (admin or curator).
+    pub fn award_badge(
+        env: Env,
+        issuer: Address,
+        worker_id: Symbol,
+        badge_id: Symbol,
+        name: String,
+        expires_at: u64,
+    ) {
+        issuer.require_auth();
+        let is_admin = Self::has_role(env.clone(), Symbol::new(&env, ROLE_ADMIN), issuer.clone());
+        let is_curator = Self::is_curator(env.clone(), issuer.clone());
+        assert!(is_admin || is_curator, "Not authorized");
+
+        let worker: Worker = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Worker(worker_id.clone()))
+            .expect("Worker not found");
+
+        let badge = Badge {
+            id: badge_id.clone(),
+            name: name.clone(),
+            issuer: issuer.clone(),
+            awarded_at: env.ledger().timestamp(),
+            expires_at,
+            active: true,
+        };
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Badge(worker_id.clone(), badge_id.clone()), &badge);
+
+        let mut badges: Vec<Symbol> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::WorkerBadges(worker_id.clone()))
+            .unwrap_or(Vec::new(&env));
+        if badges.iter().all(|b| b != badge_id) {
+            badges.push_back(badge_id.clone());
+            env.storage()
+                .persistent()
+                .set(&DataKey::WorkerBadges(worker_id.clone()), &badges);
+        }
+
+        env.events().publish(
+            (symbol_short!("BdgAwd"), worker_id, badge_id),
+            (issuer, name),
+        );
+    }
+
+    /// Revoke a badge from a worker (admin or original issuer).
+    pub fn revoke_badge(env: Env, caller: Address, worker_id: Symbol, badge_id: Symbol) {
+        caller.require_auth();
+        let mut badge: Badge = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Badge(worker_id.clone(), badge_id.clone()))
+            .expect("Badge not found");
+
+        let is_admin = Self::has_role(env.clone(), Symbol::new(&env, ROLE_ADMIN), caller.clone());
+        assert!(is_admin || badge.issuer == caller, "Not authorized");
+
+        badge.active = false;
+        env.storage()
+            .persistent()
+            .set(&DataKey::Badge(worker_id.clone(), badge_id.clone()), &badge);
+
+        env.events().publish(
+            (symbol_short!("BdgRvk"), worker_id, badge_id),
+            caller,
+        );
+    }
+
+    /// Verify if a worker has a specific active badge.
+    pub fn verify_badge(env: Env, worker_id: Symbol, badge_id: Symbol) -> bool {
+        if let Some(badge) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, Badge>(&DataKey::Badge(worker_id, badge_id))
+        {
+            let now = env.ledger().timestamp();
+            badge.active && (badge.expires_at == 0 || badge.expires_at > now)
+        } else {
+            false
+        }
+    }
+
+    /// Get all badges for a worker.
+    pub fn get_worker_badges(env: Env, worker_id: Symbol) -> Vec<Badge> {
+        let badge_ids: Vec<Symbol> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::WorkerBadges(worker_id.clone()))
+            .unwrap_or(Vec::new(&env));
+
+        let mut badges: Vec<Badge> = Vec::new(&env);
+        for badge_id in badge_ids.iter() {
+            if let Some(badge) = env
+                .storage()
+                .persistent()
+                .get(&DataKey::Badge(worker_id.clone(), badge_id))
+            {
+                badges.push_back(badge);
+            }
+        }
+        badges
+    }
+
+    /// Get a specific badge.
+    pub fn get_badge(env: Env, worker_id: Symbol, badge_id: Symbol) -> Option<Badge> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Badge(worker_id, badge_id))
     }
 
     // -------------------------------------------------------------------------

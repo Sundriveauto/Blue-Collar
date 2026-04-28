@@ -18,7 +18,7 @@ import { getAnalytics, trackView } from '../controllers/analytics.js'
 import { authenticate, authorize } from '../middleware/auth.js'
 import { validate } from '../middleware/validate.js'
 import { upload, handleMulterError } from '../middleware/upload.js'
-import { createWorkerRules } from '../validations/worker.js'
+import { createWorkerRules } from '../validations/index.js'
 import { cacheMiddleware, invalidateCachePattern, TTL } from '../middleware/cache.js'
 import { contactRateLimit, generalRateLimit } from '../middleware/userRateLimit.js'
 

@@ -28,7 +28,7 @@ import {
   forgotPasswordRules,
   resetPasswordRules,
   verifyAccountRules,
-} from '../validations/auth.js'
+} from '../validations/index.js'
 
 const router = Router()
 

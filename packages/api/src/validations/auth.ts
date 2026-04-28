@@ -1,5 +1,5 @@
 /**
- * Validation rules for authentication and user account endpoints.
+ * Validation schemas for authentication and user account endpoints.
  * Rules follow simple-body-validator syntax: 'rule1|rule2|...'.
  */
 

@@ -28,6 +28,7 @@ vi.mock("../services/worker.service.js", () => ({
 vi.mock("../db.js", () => ({
   db: {
     worker: { findMany: vi.fn(), count: vi.fn() },
+    review: { groupBy: vi.fn() },
   },
 }));
 
@@ -44,6 +45,7 @@ vi.mock("../config/env.js", () => ({
 // ─── Imports (after mocks) ────────────────────────────────────────────────────
 
 import * as workerService from "../services/worker.service.js";
+import { db } from "../db.js";
 import {
   listWorkers,
   showWorker,
@@ -182,23 +184,70 @@ describe("authorize middleware", () => {
 describe("listWorkers", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("returns paginated results with default params", async () => {
-    (workerService.listWorkers as any).mockResolvedValue({
-      data: [mockWorker],
-      meta: { total: 1, page: 1, limit: 20, pages: 1 },
-    });
+  it("returns first page in cursor mode when page is absent", async () => {
+    (db.worker.findMany as any).mockResolvedValue([mockWorker]);
     const req = makeReq({ query: {} });
     const res = makeRes();
 
     await listWorkers(req, res);
 
-    expect(workerService.listWorkers).toHaveBeenCalledWith(
-      expect.objectContaining({ page: 1, limit: 20 }),
+    expect(db.worker.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ take: 21, orderBy: { createdAt: "desc" } }),
     );
     const body = res.json.mock.calls[0][0];
     expect(body.status).toBe("success");
     expect(body.code).toBe(200);
-    expect(body.meta.total).toBe(1);
+    expect(body.nextCursor).toBeNull();
+    expect(body.limit).toBe(20);
+    expect(body.data).toHaveLength(1);
+  });
+
+  it("returns second page using a Prisma cursor", async () => {
+    (db.worker.findMany as any).mockResolvedValue([
+      { ...mockWorker, id: "worker-2" },
+      { ...mockWorker, id: "worker-3" },
+      { ...mockWorker, id: "worker-4" },
+    ]);
+    const req = makeReq({ query: { cursor: "worker-1", limit: "2" } });
+    const res = makeRes();
+
+    await listWorkers(req, res);
+
+    expect(db.worker.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ cursor: { id: "worker-1" }, skip: 1, take: 3 }),
+    );
+    const body = res.json.mock.calls[0][0];
+    expect(body.data).toHaveLength(2);
+    expect(body.nextCursor).toBe("worker-3");
+  });
+
+  it("returns null nextCursor on the last cursor page", async () => {
+    (db.worker.findMany as any).mockResolvedValue([{ ...mockWorker, id: "worker-9" }]);
+    const req = makeReq({ query: { cursor: "worker-8", limit: "2" } });
+    const res = makeRes();
+
+    await listWorkers(req, res);
+
+    const body = res.json.mock.calls[0][0];
+    expect(body.nextCursor).toBeNull();
+    expect(body.data).toHaveLength(1);
+  });
+
+  it("keeps backward-compatible offset pagination when page is provided", async () => {
+    (workerService.listWorkers as any).mockResolvedValue({
+      data: [mockWorker],
+      meta: { total: 1, page: 2, limit: 20, pages: 1 },
+    });
+    const req = makeReq({ query: { page: "2", limit: "20" } });
+    const res = makeRes();
+
+    await listWorkers(req, res);
+
+    expect(workerService.listWorkers).toHaveBeenCalledWith(
+      expect.objectContaining({ page: 2, limit: 20 }),
+    );
+    const body = res.json.mock.calls[0][0];
+    expect(body.meta.page).toBe(2);
     expect(body.data).toHaveLength(1);
   });
 

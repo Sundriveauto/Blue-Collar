@@ -6,14 +6,13 @@ import Link from "next/link";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import WorkerForm, { type WorkerFormInput } from "@/components/WorkerForm";
 import PortfolioGallery, { type PortfolioImage } from "@/components/PortfolioGallery";
-import ToastContainer from "@/components/Toast";
 import { useToast } from "@/hooks/useToast";
 import { getWorker, updateWorker } from "@/lib/api";
 import type { Worker } from "@/types";
 
 export default function EditWorkerPage({ params }: { params: { id: string } }) {
   const router = useRouter();
-  const { toasts, toast, dismiss } = useToast();
+  const { toast } = useToast();
   const [worker, setWorker] = useState<Worker | null>(null);
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -132,8 +131,6 @@ export default function EditWorkerPage({ params }: { params: { id: string } }) {
           <p className="text-sm text-gray-500">Worker not found.</p>
         )}
       </div>
-
-      <ToastContainer toasts={toasts} dismiss={dismiss} />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import webpush from 'web-push'
 import { db } from '../db.js'
+import { logger } from '../config/logger.js'
 
 const vapidPublicKey = process.env.VAPID_PUBLIC_KEY
 const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY
@@ -21,7 +22,7 @@ export async function sendPushNotification(
   payload: PushNotificationPayload
 ): Promise<void> {
   if (!vapidPublicKey || !vapidPrivateKey) {
-    console.warn('[PushService] VAPID keys not configured, skipping push notification')
+    logger.warn('[PushService] VAPID keys not configured, skipping push notification')
     return
   }
 
@@ -37,7 +38,7 @@ export async function sendPushNotification(
         JSON.stringify(payload)
       )
     } catch (error) {
-      console.error('[PushService] error sending notification:', error)
+      logger.error({ err: error }, '[PushService] error sending notification')
       // Remove invalid subscription
       if (error instanceof Error && error.message.includes('410')) {
         await db.pushSubscription.delete({ where: { id: sub.id } })

@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express'
 import { AppError, ErrorCode } from '../utils/AppError.js'
+import { logger } from '../config/logger.js'
 
 /**
  * Global error handling middleware for Express.
@@ -67,13 +68,12 @@ export function notFoundHandler(req: Request, _res: Response, next: NextFunction
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function logError(err: Error, req: Request) {
-  console.error('[ERROR]', {
+  logger.error({
     message: err.message,
     stack: err.stack,
     url: req.url,
     method: req.method,
-    timestamp: new Date().toISOString(),
-  })
+  }, '[ERROR]')
 }
 
 interface PrismaClientKnownRequestError {

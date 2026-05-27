@@ -20,11 +20,71 @@ function haversine(lat1: number, lon1: number, lat2: number, lon2: number): numb
 
 export async function listWorkers(req: Request, res: Response) {
   const {
-    category, page = '1', limit = '20', lat, lng, radius,
+    category, page, cursor, limit = '20', lat, lng, radius,
     search, lang, city, state, country,
     minRating, maxRating, available, listedSince,
     categories, sortBy, sortOrder, isVerified,
   } = req.query
+  const limitNum = Math.min(Math.max(Number(limit) || 20, 1), 100)
+
+  if (!page && !lat && !lng) {
+    const categoryIds = categories
+      ? String(categories).split(',').map(s => s.trim()).filter(Boolean)
+      : undefined
+    const categoryFilter = categoryIds && categoryIds.length > 0
+      ? { categoryId: { in: categoryIds } }
+      : category
+      ? { categoryId: String(category) }
+      : {}
+    const where: any = {
+      isActive: true,
+      ...categoryFilter,
+      ...(isVerified !== undefined ? { isVerified: isVerified === 'true' } : {}),
+      ...(city || state || country
+        ? {
+            location: {
+              ...(city ? { city: { contains: String(city), mode: 'insensitive' as const } } : {}),
+              ...(state ? { state: { contains: String(state), mode: 'insensitive' as const } } : {}),
+              ...(country ? { country: { contains: String(country), mode: 'insensitive' as const } } : {}),
+            },
+          }
+        : {}),
+      ...(available !== undefined ? { availability: { some: { dayOfWeek: Number(available) } } } : {}),
+      ...(listedSince
+        ? { createdAt: { gte: new Date(Date.now() - Number(listedSince) * 365 * 24 * 60 * 60 * 1000) } }
+        : {}),
+      ...(search ? { name: { contains: String(search), mode: 'insensitive' as const } } : {}),
+    }
+
+    if (minRating !== undefined || maxRating !== undefined) {
+      const havingClause: any = {}
+      if (minRating !== undefined) havingClause.gte = Number(minRating)
+      if (maxRating !== undefined) havingClause.lte = Number(maxRating)
+      const qualifiedIds = await db.review.groupBy({
+        by: ['workerId'],
+        _avg: { rating: true },
+        having: { rating: { _avg: havingClause } },
+      })
+      where.id = { in: qualifiedIds.map((r: { workerId: string }) => r.workerId) }
+    }
+
+    const rows = await db.worker.findMany({
+      where,
+      ...(cursor ? { cursor: { id: String(cursor) }, skip: 1 } : {}),
+      take: limitNum + 1,
+      include: { category: true, curator: true },
+      orderBy: { createdAt: 'desc' },
+    })
+    const data = rows.slice(0, limitNum)
+
+    return res.json({
+      data: WorkerCollection(data as any),
+      nextCursor: rows.length > limitNum ? data[data.length - 1]?.id ?? null : null,
+      limit: limitNum,
+      status: 'success',
+      code: 200,
+    })
+  }
 
   // Geo search: if lat/lng/radius provided, filter by proximity using Haversine
   if (lat && lng) {
@@ -40,20 +100,22 @@ export async function listWorkers(req: Request, res: Response) {
     const workers = await db.worker.findMany({
       where: {
         isActive: true,
-        latitude: { gte: userLat - delta, lte: userLat + delta },
-        longitude: { gte: userLng - delta, lte: userLng + delta },
+        location: {
+          lat: { gte: userLat - delta, lte: userLat + delta },
+          lng: { gte: userLng - delta, lte: userLng + delta },
+        },
         ...(category ? { categoryId: String(category) } : {}),
       },
-      include: { category: true },
+      include: { category: true, location: true },
     })
 
     const withDistance = workers
-      .map(w => ({ ...w, distanceKm: haversine(userLat, userLng, w.latitude!, w.longitude!) }))
+      .filter(w => w.location?.lat != null && w.location?.lng != null)
+      .map(w => ({ ...w, distanceKm: haversine(userLat, userLng, w.location!.lat!, w.location!.lng!) }))
       .filter(w => w.distanceKm <= radiusKm)
       .sort((a, b) => a.distanceKm - b.distanceKm)
 
     const pageNum = Number(page)
-    const limitNum = Number(limit)
     const paginated = withDistance.slice((pageNum - 1) * limitNum, pageNum * limitNum)
     return res.json({ data: paginated, status: 'success', code: 200 })
   }
@@ -66,8 +128,8 @@ export async function listWorkers(req: Request, res: Response) {
   const result = await workerService.listWorkers({
     category: category ? String(category) : undefined,
     categories: categoryIds,
-    page: Number(page),
-    limit: Number(limit),
+    page: Number(page ?? 1),
+    limit: limitNum,
     search: search ? String(search) : undefined,
     lang: lang ? String(lang) : undefined,
     city: city ? String(city) : undefined,

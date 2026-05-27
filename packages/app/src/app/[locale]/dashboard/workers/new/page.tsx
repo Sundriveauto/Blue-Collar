@@ -5,13 +5,12 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import WorkerForm, { type WorkerFormInput } from "@/components/WorkerForm";
-import ToastContainer from "@/components/Toast";
 import { useToast } from "@/hooks/useToast";
 import { createWorker } from "@/lib/api";
 
 export default function NewWorkerPage() {
   const router = useRouter();
-  const { toasts, toast, dismiss } = useToast();
+  const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (data: WorkerFormInput, imageFile: File | null) => {
@@ -51,8 +50,6 @@ export default function NewWorkerPage() {
           isSubmitting={isSubmitting}
         />
       </div>
-
-      <ToastContainer toasts={toasts} dismiss={dismiss} />
     </div>
   );
 }

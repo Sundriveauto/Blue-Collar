@@ -3,10 +3,11 @@
   "info": {
     "title": "BlueCollar API",
     "version": "1.0.0",
-    "description": "REST API for the BlueCollar decentralised skilled-worker platform built on Stellar."
+    "description": "REST API for the BlueCollar decentralised skilled-worker platform built on Stellar.\n\n## API Versioning\n\nBlueCollar uses **URL-based versioning**. All endpoints are prefixed with `/api/v1/`.\n\n| Version | Base Path    | Status      | Sunset Date |\n|---------|--------------|-------------|-------------|\n| v1      | `/api/v1/*`  | ✅ Current  | —           |\n| —       | `/api/*`     | ⚠️ Deprecated | 2027-01-01 |\n\nRequests to unversioned `/api/*` paths receive a `301` redirect to `/api/v1/*` plus deprecation headers:\n```\nDeprecation: true\nWarning: 299 - \"Unversioned API path is deprecated. Use /api/v1/* instead.\"\nSunset: Sat, 01 Jan 2027 00:00:00 GMT\n```\n\nUse `GET /api/v1/version` to discover the current API version at runtime."
   },
   "servers": [
-    { "url": "http://localhost:3000/api", "description": "Local development" }
+    { "url": "http://localhost:3000/api/v1", "description": "Local development (v1)" },
+    { "url": "http://localhost:3000/api", "description": "Local development (deprecated — redirects to v1)" }
   ],
   "components": {
     "securitySchemes": {
@@ -84,6 +85,33 @@
     }
   },
   "paths": {
+    "/version": {
+      "get": {
+        "tags": ["Meta"],
+        "summary": "Get current API version",
+        "description": "Returns the current API version, supported versions, and deprecation info.",
+        "responses": {
+          "200": {
+            "description": "Version info",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "version": { "type": "string", "example": "1.0.0" },
+                    "apiVersion": { "type": "string", "example": "v1" },
+                    "status": { "type": "string", "example": "current" },
+                    "supported": { "type": "array", "items": { "type": "string" }, "example": ["v1"] },
+                    "deprecated": { "type": "array", "items": { "type": "string" }, "example": [] },
+                    "sunset": { "type": "string", "nullable": true, "example": null }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/register": {
       "post": {
         "tags": ["Auth"],

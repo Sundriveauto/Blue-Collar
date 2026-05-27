@@ -2,7 +2,7 @@ import createMiddleware from 'next-intl/middleware'
 import { NextRequest, NextResponse } from "next/server";
 
 const PROTECTED = ["/dashboard"];
-const locales = ['en', 'fr', 'es']
+const locales = ['en', 'fr', 'es', 'pt']
 const defaultLocale = 'en'
 
 const intlMiddleware = createMiddleware({

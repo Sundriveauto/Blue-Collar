@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { transporter } from './transport.js'
+import { logger } from '../config/logger.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -60,7 +61,7 @@ export async function sendModerationEmail(
     html: `<p>Hi <strong>${firstName}</strong>, your review has been <strong>${action}</strong> by our moderation team.</p>`,
   })
   if ((transporter as any).options?.jsonTransport) {
-    console.log('[mailer] Moderation email (dev stub):', JSON.parse((info as any).message))
+    logger.debug({ message: JSON.parse((info as any).message) }, '[mailer] Moderation email (dev stub)')
   }
 }
 

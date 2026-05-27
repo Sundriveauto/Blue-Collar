@@ -3,6 +3,7 @@ import argon2 from 'argon2'
 import { db } from '../db.js'
 import { sanitizeUser } from '../models/user.model.js'
 import * as userService from '../services/user.service.js'
+import { logger } from '../config/logger.js'
 
 // ── Profile update ────────────────────────────────────────────────────────────
 
@@ -29,7 +30,7 @@ export async function updateProfile(req: Request, res: Response) {
     })
     return res.json({ data: sanitizeUser(user), status: 'success', code: 200 })
   } catch (error) {
-    console.error('[updateProfile] error:', error)
+    logger.error({ err: error }, '[updateProfile] error')
     return res.status(500).json({ status: 'error', message: 'Failed to update profile', code: 500 })
   }
 }
@@ -86,7 +87,7 @@ export async function changePassword(req: Request, res: Response) {
     await db.user.update({ where: { id: userId }, data: { password: hashed } })
     return res.json({ status: 'success', message: 'Password updated', code: 200 })
   } catch (error) {
-    console.error('[changePassword] error:', error)
+    logger.error({ err: error }, '[changePassword] error')
     return res.status(500).json({ status: 'error', message: 'Failed to change password', code: 500 })
   }
 }
@@ -101,7 +102,7 @@ export async function deleteAccount(req: Request, res: Response) {
     await db.user.delete({ where: { id: userId } })
     return res.json({ status: 'success', message: 'Account deleted', code: 200 })
   } catch (error) {
-    console.error('[deleteAccount] error:', error)
+    logger.error({ err: error }, '[deleteAccount] error')
     return res.status(500).json({ status: 'error', message: 'Failed to delete account', code: 500 })
   }
 }
@@ -126,7 +127,7 @@ export async function savePushSubscription(req: Request, res: Response) {
 
     return res.json({ data: subscription, status: 'success', code: 201 })
   } catch (error) {
-    console.error('[savePushSubscription] error:', error)
+    logger.error({ err: error }, '[savePushSubscription] error')
     return res.status(500).json({ status: 'error', message: 'Failed to save subscription', code: 500 })
   }
 }
@@ -147,7 +148,7 @@ export async function deletePushSubscription(req: Request, res: Response) {
 
     return res.json({ status: 'success', message: 'Unsubscribed', code: 200 })
   } catch (error) {
-    console.error('[deletePushSubscription] error:', error)
+    logger.error({ err: error }, '[deletePushSubscription] error')
     return res.status(500).json({ status: 'error', message: 'Failed to unsubscribe', code: 500 })
   }
 }

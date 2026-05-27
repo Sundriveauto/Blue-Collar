@@ -2,18 +2,17 @@
  * Worker Routes
  * Execution Order: Rate Limit -> Auth -> Validation -> Cache -> Controller
  */
-import { Router } from 'express'
+import { Router, type Request, type Response } from 'express'
 import {
   listWorkers,
   listMyWorkers,
   createWorker,
-  showWorker,
   updateWorker,
   deleteWorker,
   toggleActivation,
 } from '../controllers/workers.js'
 import { toggleBookmark } from '../controllers/bookmarks.js'
-import { createReview, listReviews } from '../controllers/reviews.js'
+import { createWorkerReview, deleteReview, listWorkerReviews } from './reviews.js'
 import { getAvailability, upsertAvailability, addAvailabilitySlot, deleteAvailabilitySlot } from '../controllers/availability.js'
 import { registerOnChain } from '../controllers/stellar.js'
 import { createContactRequest, getContactRequests, updateContactRequestStatus } from '../controllers/contact-request.js'
@@ -26,13 +25,34 @@ import { upload, handleMulterError } from '../middleware/upload.js'
 import { createWorkerRules } from '../validations/index.js'
 import { cacheMiddleware, invalidateCachePattern, TTL } from '../middleware/cache.js'
 import { contactRateLimit, generalRateLimit } from '../middleware/userRateLimit.js'
+import { db } from '../db.js'
 
 const router = Router()
+
+async function showWorkerWithRatings(req: Request, res: Response) {
+  const [worker, rating] = await Promise.all([
+    db.worker.findUnique({
+      where: { id: req.params.id },
+      include: { category: true, portfolio: { orderBy: { order: 'asc' } } },
+    }),
+    db.review.aggregate({
+      where: { workerId: req.params.id },
+      _avg: { rating: true },
+      _count: { rating: true },
+    }),
+  ])
+  if (!worker) return res.status(404).json({ status: 'error', message: 'Not found', code: 404 })
+  return res.json({
+    data: { ...worker, avgRating: rating._avg.rating ?? 0, reviewCount: rating._count.rating },
+    status: 'success',
+    code: 200,
+  })
+}
 
 router.get('/', generalRateLimit, cacheMiddleware(TTL.MEDIUM), listWorkers)
 router.get('/mine', authenticate, authorize('curator', 'admin'), listMyWorkers)
 router.get('/mine', withAuth(['curator', 'admin']), listMyWorkers)
-router.get('/:id', generalRateLimit, cacheMiddleware(TTL.MEDIUM), showWorker)
+router.get('/:id', generalRateLimit, cacheMiddleware(TTL.MEDIUM), showWorkerWithRatings)
 router.post('/', authenticate, authorize('curator'), validate(createWorkerRules), createWorker)
 router.put('/:id', authenticate, authorize('curator'), updateWorker)
 router.delete('/:id', authenticate, authorize('curator'), deleteWorker)
@@ -68,9 +88,10 @@ router.post('/:id/bookmark', authenticate, toggleBookmark)
 router.post('/:id/bookmark', withAuth(), toggleBookmark)
 
 // Reviews
-router.get('/:id/reviews', cacheMiddleware(TTL.SHORT), listReviews)
-router.post('/:id/reviews', authenticate, createReview)
-router.post('/:id/reviews', withAuth(), createReview)
+router.get('/:id/reviews', cacheMiddleware(TTL.SHORT), listWorkerReviews)
+router.post('/:id/reviews', authenticate, createWorkerReview)
+router.post('/:id/reviews', withAuth(), createWorkerReview)
+router.delete('/reviews/:id', authenticate, deleteReview)
 
 // Verifications
 router.get('/:id/verifications', authenticate, authorize('curator', 'admin'), getWorkerVerifications)

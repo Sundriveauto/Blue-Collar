@@ -47,7 +47,8 @@ model User {
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt
   workers                 Worker[]
-  reviews                 Review[]
+  reviews                 Review[]             @relation("ReviewUser")
+  authoredReviews         Review[]             @relation("ReviewAuthor")
   bookmarks               Bookmark[]
   contactRequests         ContactRequest[]
   pushSubscriptions       PushSubscription[]
@@ -155,15 +156,20 @@ model Review {
   id          String        @id @default(cuid())
   workerId    String
   worker      Worker        @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  userId      String?
+  user        User?         @relation("ReviewUser", fields: [userId], references: [id], onDelete: Cascade)
   authorId    String
-  author      User          @relation(fields: [authorId], references: [id])
+  author      User          @relation("ReviewAuthor", fields: [authorId], references: [id])
   rating      Int
+  body        String        @default("")
   comment     String?
   status      ReviewStatus  @default(pending)
   flagged     Boolean       @default(false)
   flagReason  String?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
+
+  @@unique([userId, workerId])
 }
 
 model Subscription {

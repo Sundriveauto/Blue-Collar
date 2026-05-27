@@ -62,7 +62,8 @@
     "@opentelemetry/exporter-jaeger": "^1.18.0",
     "@opentelemetry/exporter-prometheus": "^0.45.0",
     "prom-client": "^15.1.0",
-    "v8-profiler-next": "^1.9.0"
+    "v8-profiler-next": "^1.9.0",
+    "xss": "^1.0.15"
   },
   "devDependencies": {
     "@faker-js/faker": "^10.2.0",

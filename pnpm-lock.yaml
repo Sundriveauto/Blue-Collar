@@ -83,6 +83,9 @@ importers:
       winston:
         specifier: ^3.17.0
         version: 3.19.0
+      xss:
+        specifier: ^1.0.15
+        version: 1.0.15
     devDependencies:
       '@faker-js/faker':
         specifier: ^10.2.0

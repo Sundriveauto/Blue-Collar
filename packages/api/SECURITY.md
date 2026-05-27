@@ -24,6 +24,10 @@ Please include:
 
 This policy covers the BlueCollar API, smart contracts, and frontend app hosted under this repository.
 
+## Input Sanitization
+
+All incoming API `req.body` and `req.query` values are recursively sanitized with the `xss` package before reaching route handlers. This strips unsafe HTML tags and dangerous attributes such as `<script>` and inline event handlers from string values at any nesting depth. Raw HTML should not be stored or reflected without passing through this middleware.
+
 ## Out of Scope
 
 - Vulnerabilities in third-party dependencies (report those upstream)

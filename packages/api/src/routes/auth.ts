@@ -21,7 +21,7 @@ import {
 } from '../controllers/twoFactor.js'
 import { authenticate } from '../middleware/auth.js'
 import { validate } from '../middleware/validate.js'
-import { authRateLimiter } from '../config/rateLimiter.js'
+import { moderateAuthRateLimiter, strictAuthRateLimiter } from '../config/rateLimiter.js'
 import passport from '../config/passport.js'
 import {
   registerRules,
@@ -47,8 +47,8 @@ router.get(
 )
 
 // ── Email / password ──────────────────────────────────────────────────────────
-router.post('/login', validate(loginRules), login)
-router.post('/register', validate(registerRules), register)
+router.post('/login', strictAuthRateLimiter, validate(loginRules), login)
+router.post('/register', moderateAuthRateLimiter, validate(registerRules), register)
 
 // Requires a valid JWT; stateless logout (client discards the token).
 router.delete('/logout', authenticate, logout)
@@ -68,7 +68,7 @@ router.get('/unsubscribe-reminders', unsubscribeReminders)
 
 // ── Password reset ────────────────────────────────────────────────────────────
 // Sends a reset link to the given email (always 200 to prevent enumeration).
-router.post('/forgot-password', validate(forgotPasswordRules), forgotPassword)
+router.post('/forgot-password', strictAuthRateLimiter, validate(forgotPasswordRules), forgotPassword)
 
 // Validates the raw reset token (hashed and compared server-side), then
 // updates the password and clears the reset token fields.

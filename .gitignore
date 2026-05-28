@@ -7,3 +7,31 @@ storage/uploads/*
 !storage/uploads/.gitkeep
 
 packages/api_backup/
+
+# Test snapshots
+**/__snapshots__/
+*.snap
+
+# Coverage reports
+coverage/
+.nyc_output/
+
+# Build artifacts
+*.tsbuildinfo
+
+# Stryker mutation testing
+.stryker-tmp/
+reports/
+
+# Pact contract testing
+pacts/
+.pact/
+
+# OS files
+Thumbs.db
+
+# Editor directories
+.idea/
+.vscode/
+*.swp
+*.swo

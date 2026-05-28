@@ -8,13 +8,11 @@ import { sanitizeUser } from '../models/user.model.js'
 import { logger } from '../config/logger.js'
 import type { LoginBody, RegisterBody } from '../interfaces/index.js'
 
+const ACCESS_TOKEN_TTL = '15m'
+const REFRESH_TOKEN_TTL_DAYS = 7
+
 /**
  * Generate a short-lived email verification token for a user.
- *
- * Returns the raw JWT (sent in the email link), its SHA-256 hash (stored in the DB),
- * and the expiry timestamp.
- *
- * @param userId - The user's database id.
  */
 function generateVerificationToken(userId: string) {
   const raw = jwt.sign({ id: userId, purpose: 'email-verify' }, process.env.JWT_SECRET!, {
@@ -26,13 +24,18 @@ function generateVerificationToken(userId: string) {
 }
 
 /**
+ * Generate a refresh token: raw random bytes + its SHA-256 hash + expiry.
+ */
+function generateRefreshToken() {
+  const raw = crypto.randomBytes(40).toString('hex')
+  const hash = crypto.createHash('sha256').update(raw).digest('hex')
+  const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000)
+  return { raw, hash, expiresAt }
+}
+
+/**
  * Authenticate a user with email and password.
- *
- * @param email - The user's email address.
- * @param password - The plaintext password to verify.
- * @returns `{ data: SanitizedUser, token: string }` on success.
- * @throws AppError 401 if credentials are invalid.
- * @throws AppError 403 if the account has not been email-verified.
+ * Issues a short-lived access token (15 min) and a long-lived refresh token (7 days).
  */
 export async function loginUser({ email, password }: LoginBody) {
   const user = await db.user.findUnique({ where: { email } })
@@ -45,8 +48,53 @@ export async function loginUser({ email, password }: LoginBody) {
       403,
     )
   }
-  const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET!, { expiresIn: '7d' })
-  return { data: sanitizeUser(user), token }
+
+  const accessToken = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET!, {
+    expiresIn: ACCESS_TOKEN_TTL,
+  })
+
+  const { raw: refreshTokenRaw, hash: refreshTokenHash, expiresAt } = generateRefreshToken()
+  await db.refreshToken.create({ data: { userId: user.id, tokenHash: refreshTokenHash, expiresAt } })
+
+  return { data: sanitizeUser(user), token: accessToken, refreshToken: refreshTokenRaw }
+}
+
+/**
+ * Exchange a valid refresh token for a new access token + refresh token pair.
+ * Revokes the old refresh token (rotation strategy).
+ */
+export async function rotateRefreshToken(rawToken: string) {
+  const hash = crypto.createHash('sha256').update(rawToken).digest('hex')
+  const stored = await db.refreshToken.findUnique({ where: { tokenHash: hash } })
+
+  if (!stored || stored.revokedAt || stored.expiresAt < new Date()) {
+    throw new AppError('Invalid or expired refresh token', 401)
+  }
+
+  // Revoke the old token
+  await db.refreshToken.update({ where: { id: stored.id }, data: { revokedAt: new Date() } })
+
+  const user = await db.user.findUnique({ where: { id: stored.userId } })
+  if (!user) throw new AppError('User not found', 404)
+
+  const accessToken = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET!, {
+    expiresIn: ACCESS_TOKEN_TTL,
+  })
+
+  const { raw: newRefreshRaw, hash: newRefreshHash, expiresAt } = generateRefreshToken()
+  await db.refreshToken.create({ data: { userId: user.id, tokenHash: newRefreshHash, expiresAt } })
+
+  return { token: accessToken, refreshToken: newRefreshRaw }
+}
+
+/**
+ * Revoke all refresh tokens for a user (called on logout).
+ */
+export async function revokeAllRefreshTokens(userId: string) {
+  await db.refreshToken.updateMany({
+    where: { userId, revokedAt: null },
+    data: { revokedAt: new Date() },
+  })
 }
 
 /**

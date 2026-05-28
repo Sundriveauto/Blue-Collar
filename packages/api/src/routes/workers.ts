@@ -49,7 +49,7 @@ async function showWorkerWithRatings(req: Request, res: Response) {
   })
 }
 
-router.get('/', generalRateLimit, cacheMiddleware(TTL.MEDIUM), listWorkers)
+router.get('/', generalRateLimit, cacheMiddleware(TTL.SHORT), listWorkers)
 router.get('/mine', authenticate, authorize('curator', 'admin'), listMyWorkers)
 router.get('/mine', withAuth(['curator', 'admin']), listMyWorkers)
 router.get('/:id', generalRateLimit, cacheMiddleware(TTL.MEDIUM), showWorkerWithRatings)

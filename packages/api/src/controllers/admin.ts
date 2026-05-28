@@ -80,3 +80,48 @@ export async function getStats(req: Request, res: Response) {
     code: 200,
   })
 }
+
+/**
+ * POST /api/admin/workers/bulk-toggle
+ * Activate or deactivate multiple workers in a single transaction.
+ *
+ * Body: { ids: string[], active: boolean }
+ */
+export async function bulkToggleWorkers(req: Request, res: Response) {
+  const { ids, active } = req.body as { ids?: unknown; active?: unknown }
+
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ status: 'error', message: 'ids must be a non-empty array', code: 400 })
+  }
+  if (typeof active !== 'boolean') {
+    return res.status(400).json({ status: 'error', message: 'active must be a boolean', code: 400 })
+  }
+
+  const result = await db.$transaction(async (tx) => {
+    await tx.worker.updateMany({ where: { id: { in: ids as string[] } }, data: { isActive: active } })
+    return tx.worker.count({ where: { id: { in: ids as string[] } } })
+  })
+
+  return res.json({ data: { updated: result, active }, status: 'success', code: 200 })
+}
+
+/**
+ * DELETE /api/admin/workers/bulk-delete
+ * Delete multiple workers in a single transaction.
+ *
+ * Body: { ids: string[] }
+ */
+export async function bulkDeleteWorkers(req: Request, res: Response) {
+  const { ids } = req.body as { ids?: unknown }
+
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ status: 'error', message: 'ids must be a non-empty array', code: 400 })
+  }
+
+  const result = await db.$transaction(async (tx) => {
+    const { count } = await tx.worker.deleteMany({ where: { id: { in: ids as string[] } } })
+    return count
+  })
+
+  return res.json({ data: { deleted: result }, status: 'success', code: 200 })
+}

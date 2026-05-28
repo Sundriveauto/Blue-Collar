@@ -173,6 +173,7 @@ export async function showWorker(req: Request, res: Response) {
 export async function createWorker(req: Request<{}, {}, CreateWorkerBody>, res: Response) {
   try {
     const worker = await workerService.createWorker(req.body, req.user!.id)
+    await invalidateCachePattern(`cache:*workers?*`)
     return res.status(201).json({
       data: workerSerializer.serialize(worker as any),
       status: 'success',

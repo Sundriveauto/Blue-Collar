@@ -10,6 +10,7 @@ import {
   resendVerification,
   googleAuthCallback,
   unsubscribeReminders,
+  refresh,
 } from '../controllers/auth.js'
 import {
   setup2FA,
@@ -50,8 +51,11 @@ router.get(
 router.post('/login', strictAuthRateLimiter, validate(loginRules), login)
 router.post('/register', moderateAuthRateLimiter, validate(registerRules), register)
 
-// Requires a valid JWT; stateless logout (client discards the token).
+// Requires a valid JWT; revokes all refresh tokens on logout.
 router.delete('/logout', authenticate, logout)
+
+// Exchange a refresh token for a new access + refresh token pair.
+router.post('/refresh', refresh)
 
 // Returns the currently authenticated user's profile.
 router.get('/me', authenticate, me)

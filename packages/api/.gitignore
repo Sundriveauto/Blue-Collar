@@ -5,4 +5,22 @@ dist
 .DS_Store
 storage/uploads/*
 !storage/uploads/.gitkeep
-coverage
+
+# Coverage reports
+coverage/
+.nyc_output/
+
+# Test snapshots
+**/__snapshots__/
+*.snap
+
+# Build artifacts
+*.tsbuildinfo
+
+# Stryker mutation testing
+.stryker-tmp/
+reports/
+
+# Pact contract testing
+pacts/
+.pact/

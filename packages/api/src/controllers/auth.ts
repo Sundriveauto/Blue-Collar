@@ -27,13 +27,14 @@ import type {
  */
 export async function login(req: Request<{}, {}, LoginBody>, res: Response) {
   try {
-    const { data, token } = await authService.loginUser(req.body);
+    const { data, token, refreshToken } = await authService.loginUser(req.body);
     return res.status(202).json({
       data: UserResource(data as any),
       status: "success",
       message: "Login successful",
       code: 202,
       token,
+      refreshToken,
     });
   } catch (err) {
     return handleError(res, err);
@@ -109,15 +110,38 @@ export async function googleAuthCallback(req: Request, res: Response) {
 
 /**
  * DELETE /api/auth/logout
- * Stateless logout — instructs the client to discard its JWT.
- *
- * @param _req - Unused.
- * @param res - JSON `{ status, message, code: 200 }`.
+ * Revokes all refresh tokens for the authenticated user.
  */
-export async function logout(_req: Request, res: Response) {
-  return res
-    .status(200)
-    .json({ status: "success", message: "Logged out", code: 200 });
+export async function logout(req: Request, res: Response) {
+  try {
+    if (req.user?.id) {
+      await authService.revokeAllRefreshTokens(req.user.id)
+    }
+    return res
+      .status(200)
+      .json({ status: "success", message: "Logged out", code: 200 });
+  } catch (err) {
+    return handleError(res, err)
+  }
+}
+
+/**
+ * POST /api/auth/refresh
+ * Exchange a valid refresh token for a new access token + refresh token pair.
+ *
+ * Body: { refreshToken: string }
+ */
+export async function refresh(req: Request<{}, {}, { refreshToken?: string }>, res: Response) {
+  const { refreshToken } = req.body
+  if (!refreshToken) {
+    return res.status(400).json({ status: 'error', message: 'refreshToken is required', code: 400 })
+  }
+  try {
+    const tokens = await authService.rotateRefreshToken(refreshToken)
+    return res.json({ status: 'success', ...tokens, code: 200 })
+  } catch (err) {
+    return handleError(res, err)
+  }
 }
 
 /**

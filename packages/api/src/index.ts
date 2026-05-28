@@ -14,6 +14,7 @@ import portfolioRoutes from './routes/portfolio.js'
 import reviewRoutes from './routes/reviews.js'
 import subscriptionRoutes from './routes/subscriptions.js'
 import { startReminderScheduler } from './services/reminder.service.js'
+import { startHorizonPoller } from './services/horizon-poller.service.js'
 import { errorHandler } from './middleware/errorHandler.js'
 import { logger } from './config/logger.js'
 
@@ -64,6 +65,7 @@ if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
     logger.info(`BlueCollar API running on port ${PORT}`)
     startReminderScheduler()
+    startHorizonPoller()
   })
 }
 

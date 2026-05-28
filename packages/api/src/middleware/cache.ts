@@ -7,7 +7,8 @@ import { redis, cacheMetrics } from '../config/redis.js'
 export const TTL = {
   SHORT: 60,        // 1 min  — frequently changing data (reviews, availability)
   MEDIUM: 300,      // 5 min  — worker profiles
-  LONG: 600,        // 10 min — categories, static lists
+  LONG: 600,        // 10 min — semi-static lists
+  HOUR: 3600,       // 1 hr   — categories (rarely change)
 }
 
 /**

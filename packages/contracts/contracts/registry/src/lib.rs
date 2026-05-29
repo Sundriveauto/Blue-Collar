@@ -140,16 +140,6 @@ pub struct PerformanceMetrics {
     pub performance_score: u32,
 }
 
-/// Delegate authorization for a worker.
-#[contracttype]
-#[derive(Clone)]
-pub struct Delegate {
-    /// Delegate address.
-    pub address: Address,
-    /// Expiry timestamp (0 = no expiry).
-    pub expires_at: u64,
-}
-
 /// On-chain record of a curator verifying a worker's category.
 #[contracttype]
 #[derive(Clone)]
@@ -228,6 +218,26 @@ pub struct BatchRegisterResult {
     pub success: bool,
 }
 
+/// Paginated result for [`RegistryContract::list_workers_page`].
+#[contracttype]
+#[derive(Clone)]
+pub struct WorkerPage {
+    /// Worker ids in this page.
+    pub ids: Vec<Symbol>,
+    /// Total number of registered workers.
+    pub total: u32,
+}
+
+/// Pending upgrade record for the timelock mechanism.
+#[contracttype]
+#[derive(Clone)]
+pub struct PendingUpgrade {
+    /// New WASM hash to apply.
+    pub wasm_hash: BytesN<32>,
+    /// Ledger sequence number after which the upgrade may be executed.
+    pub execute_after_ledger: u32,
+}
+
 // =============================================================================
 // Roles
 // =============================================================================
@@ -274,6 +284,16 @@ pub enum DataKey {
     Subscription(Symbol),
     /// Persistent storage — current storage schema version (u32), used by [`migrate`].
     SchemaVersion,
+    /// Persistent storage — [`LocationVerification`] keyed by worker id.
+    LocationVerification(Symbol),
+    /// Persistent storage — [`AvailabilityStatus`] keyed by worker id.
+    AvailabilityStatus(Symbol),
+    /// Persistent storage — `Vec<String>` of valid on-chain categories.
+    Categories,
+    /// Persistent storage — total worker count (u32) for efficient pagination.
+    WorkerCount,
+    /// Persistent storage — pending upgrade record for the timelock mechanism.
+    PendingUpgrade,
 }
 
 // =============================================================================
@@ -311,7 +331,7 @@ impl RegistryContract {
         let role = Symbol::new(&env, ROLE_ADMIN);
         let mut members: Vec<Address> = Vec::new(&env);
         members.push_back(admin.clone());
-        env.storage().persistent().set(&DataKey::RoleMembers(role_to_id(&role)), &members);
+        env.storage().persistent().set(&DataKey::RoleMembers(role_to_id_with_env(&env, &role)), &members);
         env.events().publish((symbol_short!("RlGrnt"), role, admin), ());
     }
 
@@ -323,7 +343,7 @@ impl RegistryContract {
 fn get_role_members(env: &Env, role: &Symbol) -> Vec<Address> {
     env.storage()
         .persistent()
-        .get(&DataKey::RoleMembers(role_to_id(role)))
+        .get(&DataKey::RoleMembers(role_to_id_with_env(&env, role)))
         .unwrap_or(Vec::new(env))
 }
 
@@ -333,22 +353,19 @@ fn role_symbol(env: &Env, role_str: &str) -> Symbol {
 }
 
 /// Convert a role symbol to its compact u64 ID for storage optimization.
-fn role_to_id(role: &Symbol) -> u64 {
-    match role.as_string().as_str() {
-        ROLE_ADMIN_CACHED => ROLE_ADMIN_ID,
-        ROLE_PAUSER_CACHED => ROLE_PAUSER_ID,
-        ROLE_CURATOR_MGR_CACHED => ROLE_CURATOR_MGR_ID,
-        ROLE_REP_MGR_CACHED => ROLE_REP_MGR_ID,
-        ROLE_UPGRADER_CACHED => ROLE_UPGRADER_ID,
-        _ => {
-            // Fallback for unknown roles - create a hash-based ID
-            // This ensures forward compatibility while maintaining optimization for known roles
-            let hash = env.crypto().sha256(role.as_string().as_bytes());
-            // Take first 8 bytes and convert to u64
-            let mut id_bytes = [0u8; 8];
-            id_bytes.copy_from_slice(&hash[0..8]);
-            u64::from_le_bytes(id_bytes)
-        }
+fn role_to_id_with_env(env: &Env, role: &Symbol) -> u64 {
+    if *role == Symbol::new(env, ROLE_ADMIN_CACHED) {
+        ROLE_ADMIN_ID
+    } else if *role == Symbol::new(env, ROLE_PAUSER_CACHED) {
+        ROLE_PAUSER_ID
+    } else if *role == Symbol::new(env, ROLE_CURATOR_MGR_CACHED) {
+        ROLE_CURATOR_MGR_ID
+    } else if *role == Symbol::new(env, ROLE_REP_MGR_CACHED) {
+        ROLE_REP_MGR_ID
+    } else if *role == Symbol::new(env, ROLE_UPGRADER_CACHED) {
+        ROLE_UPGRADER_ID
+    } else {
+        u64::MAX
     }
 }
 
@@ -426,7 +443,7 @@ fn role_to_id(role: &Symbol) -> u64 {
         let mut members = Self::get_role_members(&env, &role);
         if members.iter().all(|m| m != account) {
             members.push_back(account.clone());
-            env.storage().persistent().set(&DataKey::RoleMembers(role_to_id(&role)), &members);
+            env.storage().persistent().set(&DataKey::RoleMembers(role_to_id_with_env(&env, &role)), &members);
         }
 
         env.events().publish((symbol_short!("RlGrnt"), role, account), ());
@@ -462,7 +479,7 @@ fn role_to_id(role: &Symbol) -> u64 {
             }
         }
         assert!(found, "Account does not hold role");
-        env.storage().persistent().set(&DataKey::RoleMembers(role_to_id(&role)), &updated);
+        env.storage().persistent().set(&DataKey::RoleMembers(role_to_id_with_env(&env, &role)), &updated);
 
         env.events().publish((symbol_short!("RlRvkd"), role, account), ());
     }
@@ -747,6 +764,19 @@ fn role_to_id(role: &Symbol) -> u64 {
             "Caller is not a curator"
         );
 
+        // #531: Validate category against on-chain list (if any categories are set).
+        let cats: Vec<Symbol> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Categories)
+            .unwrap_or(Vec::new(&env));
+        if !cats.is_empty() {
+            assert!(
+                cats.iter().any(|c| c == category),
+                "Unknown category"
+            );
+        }
+
         let worker = Worker {
             id: id.clone(),
             owner: owner.clone(),
@@ -785,6 +815,16 @@ fn role_to_id(role: &Symbol) -> u64 {
         env.storage().persistent().extend_ttl(&list_key, TTL_THRESHOLD, TTL_EXTEND_TO);
         // Emit WorkerList TTL extended event
         env.events().publish((symbol_short!("WorkerListTTLExtended"), ()), ());
+
+        // #529: Maintain WorkerCount for efficient pagination.
+        let count: u32 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::WorkerCount)
+            .unwrap_or(0u32);
+        env.storage()
+            .persistent()
+            .set(&DataKey::WorkerCount, &(count + 1));
 
         env.events().publish(
             (symbol_short!("WorkerRegistered"), id),
@@ -953,6 +993,18 @@ fn role_to_id(role: &Symbol) -> u64 {
         }
         env.storage().persistent().set(&DataKey::WorkerList, &list);
 
+        // #529: Decrement WorkerCount.
+        let count: u32 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::WorkerCount)
+            .unwrap_or(0u32);
+        if count > 0 {
+            env.storage()
+                .persistent()
+                .set(&DataKey::WorkerCount, &(count - 1));
+        }
+
         env.events().publish(
             (symbol_short!("WrkDrg"), id, caller),
             (),
@@ -976,8 +1028,8 @@ fn role_to_id(role: &Symbol) -> u64 {
 
     /// List all registered worker ids.
     ///
-    /// For large registries, prefer [`list_workers_paginated`] to avoid hitting
-    /// Soroban's read-entry limits.
+    /// **Deprecated**: For large registries, use [`list_workers_page`] instead to avoid
+    /// hitting Soroban's read-entry limits and to get the total count efficiently.
     pub fn list_workers(env: Env) -> Vec<Symbol> {
         env.storage()
             .persistent()
@@ -1024,9 +1076,19 @@ fn role_to_id(role: &Symbol) -> u64 {
         list.len()
     }
 
+    /// Extend the TTL of a worker entry. Callable by anyone.
+    ///
+    /// # Panics
+    /// Panics with `"Worker not found"` if no worker exists with the given `id`.
+    pub fn extend_worker_ttl(env: Env, id: Symbol) {
+        let key = DataKey::Worker(id.clone());
+        assert!(env.storage().persistent().has(&key), "Worker not found");
+        env.storage().persistent().extend_ttl(&key, TTL_THRESHOLD, TTL_EXTEND_TO);
+    }
+
     /// Returns `true` if the contract has been initialised.
     pub fn is_initialized(env: Env) -> bool {
-        env.storage().instance().has(&DataKey::Admin)
+        env.storage().persistent().has(&DataKey::Admin)
     }
 
      /// Get the admin address.
@@ -1035,7 +1097,7 @@ fn role_to_id(role: &Symbol) -> u64 {
     /// Panics with `"Not initialized"` if [`initialize`] has not been called.
     pub fn get_admin(env: Env) -> Address {
         env.storage()
-            .instance()
+            .persistent()
             .get(&DataKey::Admin)
             .expect("Not initialized")
     }
@@ -1049,24 +1111,27 @@ fn role_to_id(role: &Symbol) -> u64 {
     /// - `"Not initialized"` if [`initialize`] has not been called.
     /// - `"Unauthorized"` if caller does not match the stored admin.
     pub fn set_admin(env: Env, new_admin: Address) {
-        let current_admin = Self::get_admin(env);
-        current_admin.require_auth(); // Require auth from current admin
-        
-        // Update admin in instance storage
-        env.storage().instance().set(&DataKey::Admin, &new_admin);
-        
-        // Update role membership: remove old admin from ADMIN role, add new admin
+        let current_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        current_admin.require_auth();
+
+        env.storage().persistent().set(&DataKey::Admin, &new_admin);
+
         let admin_role = Self::role_symbol(&env, ROLE_ADMIN);
         let mut members = Self::get_role_members(&env, &admin_role);
-        members.retain(|m| m != &current_admin); // Remove old admin
-        if !members.iter().any(|m| m == &new_admin) {
-            members.push_back(new_admin.clone()); // Add new admin if not already present
+        let mut updated: Vec<Address> = Vec::new(&env);
+        for m in members.iter() {
+            if m != current_admin {
+                updated.push_back(m);
+            }
         }
-        env.storage().persistent().set(&DataKey::RoleMembers(role_to_id(&admin_role)), &members);
-        
-        // Emit events for role changes if needed (optional, but good practice)
-        // Note: We're not emitting role grant/revoke events here to keep it simple
-        // but we could emit custom events for admin change if desired
+        if updated.iter().all(|m| m != new_admin) {
+            updated.push_back(new_admin.clone());
+        }
+        env.storage().persistent().set(&DataKey::RoleMembers(role_to_id_with_env(&env, &admin_role)), &updated);
     }
 
     // -------------------------------------------------------------------------
@@ -1510,6 +1575,11 @@ fn role_to_id(role: &Symbol) -> u64 {
                 staked_amount: 0,
                 review_count: 0,
                 avg_rating: 0,
+                subscription: WorkerSubscription {
+                    tier: SubscriptionTier::Free,
+                    expires_at: 0,
+                    last_renewed_at: env.ledger().timestamp(),
+                },
             };
 
             env.storage().persistent().set(&key, &worker);
@@ -1967,11 +2037,210 @@ fn role_to_id(role: &Symbol) -> u64 {
     /// - `"Not initialized"` if [`initialize`] has not been called.
     /// - `"Unauthorized"` if caller does not match the stored admin.
     pub fn upgrade(env: Env, new_wasm_hash: soroban_sdk::BytesN<32>) {
-        let admin = Self::get_admin(env);
-        admin.require_auth();
         let upgrader_role = Self::role_symbol(&env, ROLE_UPGRADER_CACHED);
+        let admin: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
         Self::require_role(&env, &upgrader_role, &admin);
         env.deployer().update_current_contract_wasm(new_wasm_hash);
+    }
+
+    // -------------------------------------------------------------------------
+    // #529: Pagination
+    // -------------------------------------------------------------------------
+
+    /// Return a paginated result of worker ids.
+    ///
+    /// Prefer this over [`list_workers`] for large registries.
+    ///
+    /// # Parameters
+    /// - `offset`: Zero-based index of the first item to return.
+    /// - `limit`: Maximum number of items to return.
+    ///
+    /// # Returns
+    /// [`WorkerPage`] with `ids` and `total`.
+    pub fn list_workers_page(env: Env, offset: u32, limit: u32) -> WorkerPage {
+        let total: u32 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::WorkerCount)
+            .unwrap_or(0u32);
+
+        let list: Vec<Symbol> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::WorkerList)
+            .unwrap_or(Vec::new(&env));
+
+        let mut ids: Vec<Symbol> = Vec::new(&env);
+        if offset < total && limit > 0 {
+            let end = (offset + limit).min(total);
+            for i in offset..end {
+                ids.push_back(list.get(i).unwrap());
+            }
+        }
+
+        WorkerPage { ids, total }
+    }
+
+    // -------------------------------------------------------------------------
+    // #531: On-chain category validation
+    // -------------------------------------------------------------------------
+
+    /// Add a valid category to on-chain storage. Admin only.
+    ///
+    /// Idempotent — adding an existing category is a no-op.
+    ///
+    /// # Events
+    /// Emits `("CatAdded", name)`.
+    pub fn add_category(env: Env, admin: Address, name: Symbol) {
+        let admin_role = Self::role_symbol(&env, ROLE_ADMIN_CACHED);
+        Self::require_role(&env, &admin_role, &admin);
+        Self::require_not_paused(&env);
+
+        let mut cats: Vec<Symbol> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Categories)
+            .unwrap_or(Vec::new(&env));
+
+        if cats.iter().all(|c| c != name) {
+            cats.push_back(name.clone());
+            env.storage().persistent().set(&DataKey::Categories, &cats);
+        }
+
+        env.events().publish((symbol_short!("CatAdded"), name), ());
+    }
+
+    /// Remove a category from on-chain storage. Admin only.
+    ///
+    /// # Events
+    /// Emits `("CatRemoved", name)`.
+    pub fn remove_category(env: Env, admin: Address, name: Symbol) {
+        let admin_role = Self::role_symbol(&env, ROLE_ADMIN_CACHED);
+        Self::require_role(&env, &admin_role, &admin);
+        Self::require_not_paused(&env);
+
+        let cats: Vec<Symbol> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Categories)
+            .unwrap_or(Vec::new(&env));
+
+        let mut updated: Vec<Symbol> = Vec::new(&env);
+        for c in cats.iter() {
+            if c != name {
+                updated.push_back(c);
+            }
+        }
+        env.storage().persistent().set(&DataKey::Categories, &updated);
+
+        env.events().publish((symbol_short!("CatRemoved"), name), ());
+    }
+
+    /// Return all valid on-chain categories.
+    pub fn list_categories(env: Env) -> Vec<Symbol> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Categories)
+            .unwrap_or(Vec::new(&env))
+    }
+
+    // -------------------------------------------------------------------------
+    // #530: Upgrade timelock
+    // -------------------------------------------------------------------------
+
+    /// Approximate ledger count for 48 hours (~5 s/ledger).
+    pub const TIMELOCK_LEDGERS: u32 = 34_560; // 48 * 3600 / 5
+
+    /// Propose a contract upgrade with a 48-hour timelock. Admin only.
+    ///
+    /// # Parameters
+    /// - `admin`: Must hold `ROLE_UPGRADER`; `require_auth()` is enforced.
+    /// - `new_wasm_hash`: The WASM hash to apply after the timelock.
+    ///
+    /// # Panics
+    /// - `"Missing role"` if `admin` does not hold `ROLE_UPGRADER`.
+    /// - `"Upgrade already pending"` if a pending upgrade exists.
+    ///
+    /// # Events
+    /// Emits `("UpgProposed", execute_after_ledger)`.
+    pub fn propose_upgrade(env: Env, admin: Address, new_wasm_hash: BytesN<32>) {
+        let upgrader_role = Self::role_symbol(&env, ROLE_UPGRADER_CACHED);
+        Self::require_role(&env, &upgrader_role, &admin);
+        Self::require_not_paused(&env);
+
+        assert!(
+            !env.storage().persistent().has(&DataKey::PendingUpgrade),
+            "Upgrade already pending"
+        );
+
+        let execute_after_ledger = env
+            .ledger()
+            .sequence()
+            .checked_add(Self::TIMELOCK_LEDGERS)
+            .expect("Ledger overflow");
+
+        let pending = PendingUpgrade { wasm_hash: new_wasm_hash, execute_after_ledger };
+        env.storage().persistent().set(&DataKey::PendingUpgrade, &pending);
+
+        env.events().publish((symbol_short!("UpgPropsd"), execute_after_ledger), ());
+    }
+
+    /// Execute a pending upgrade after the timelock has expired. Callable by anyone.
+    ///
+    /// # Panics
+    /// - `"No pending upgrade"` if no upgrade has been proposed.
+    /// - `"Timelock not expired"` if the current ledger is before `execute_after_ledger`.
+    ///
+    /// # Events
+    /// Emits `("UpgExecd",)`.
+    pub fn execute_upgrade(env: Env) {
+        let pending: PendingUpgrade = env
+            .storage()
+            .persistent()
+            .get(&DataKey::PendingUpgrade)
+            .expect("No pending upgrade");
+
+        assert!(
+            env.ledger().sequence() >= pending.execute_after_ledger,
+            "Timelock not expired"
+        );
+
+        env.storage().persistent().remove(&DataKey::PendingUpgrade);
+        env.events().publish((symbol_short!("UpgExecd"),), ());
+        env.deployer().update_current_contract_wasm(pending.wasm_hash);
+    }
+
+    /// Cancel a pending upgrade. Admin only.
+    ///
+    /// # Parameters
+    /// - `admin`: Must hold `ROLE_UPGRADER`; `require_auth()` is enforced.
+    ///
+    /// # Panics
+    /// - `"Missing role"` if `admin` does not hold `ROLE_UPGRADER`.
+    /// - `"No pending upgrade"` if no upgrade has been proposed.
+    ///
+    /// # Events
+    /// Emits `("UpgCancld",)`.
+    pub fn cancel_upgrade(env: Env, admin: Address) {
+        let upgrader_role = Self::role_symbol(&env, ROLE_UPGRADER_CACHED);
+        Self::require_role(&env, &upgrader_role, &admin);
+
+        assert!(
+            env.storage().persistent().has(&DataKey::PendingUpgrade),
+            "No pending upgrade"
+        );
+
+        env.storage().persistent().remove(&DataKey::PendingUpgrade);
+        env.events().publish((symbol_short!("UpgCancld"),), ());
+    }
+
+    /// Get the pending upgrade, if any.
+    pub fn get_pending_upgrade(env: Env) -> Option<PendingUpgrade> {
+        env.storage().persistent().get(&DataKey::PendingUpgrade)
     }
 }
 
@@ -2655,5 +2924,183 @@ mod tests {
         // v2 → v3
         t.client().migrate(&t.admin, &2u32);
         assert_eq!(t.client().get_schema_version(), 3u32);
+    }
+
+    // -------------------------------------------------------------------------
+    // #529: Pagination tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_list_workers_page_basic() {
+        let t = TestEnv::new();
+        t.client().add_curator(&t.admin, &t.curator);
+
+        for i in 0..5u8 {
+            let id_str = soroban_sdk::String::from_str(&t.env, &format!("p{i}"));
+            let id = Symbol::new(&t.env, &id_str);
+            t.client().register(
+                &id, &t.owner,
+                &String::from_str(&t.env, "W"),
+                &Symbol::new(&t.env, "plumber"),
+                &t.zero_hash(), &t.zero_hash(), &t.curator,
+            );
+        }
+
+        let page = t.client().list_workers_page(&0, &3);
+        assert_eq!(page.ids.len(), 3);
+        assert_eq!(page.total, 5);
+    }
+
+    #[test]
+    fn test_list_workers_page_last_page() {
+        let t = TestEnv::new();
+        t.client().add_curator(&t.admin, &t.curator);
+
+        for i in 0..5u8 {
+            let id_str = soroban_sdk::String::from_str(&t.env, &format!("q{i}"));
+            let id = Symbol::new(&t.env, &id_str);
+            t.client().register(
+                &id, &t.owner,
+                &String::from_str(&t.env, "W"),
+                &Symbol::new(&t.env, "plumber"),
+                &t.zero_hash(), &t.zero_hash(), &t.curator,
+            );
+        }
+
+        let page = t.client().list_workers_page(&3, &10);
+        assert_eq!(page.ids.len(), 2);
+        assert_eq!(page.total, 5);
+    }
+
+    #[test]
+    fn test_list_workers_page_out_of_range() {
+        let t = TestEnv::new();
+        t.client().add_curator(&t.admin, &t.curator);
+        t.register_worker(&t.curator);
+
+        let page = t.client().list_workers_page(&100, &10);
+        assert_eq!(page.ids.len(), 0);
+        assert_eq!(page.total, 1);
+    }
+
+    #[test]
+    fn test_list_workers_page_empty() {
+        let t = TestEnv::new();
+        let page = t.client().list_workers_page(&0, &10);
+        assert_eq!(page.ids.len(), 0);
+        assert_eq!(page.total, 0);
+    }
+
+    // -------------------------------------------------------------------------
+    // #531: On-chain category tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_add_and_list_categories() {
+        let t = TestEnv::new();
+        t.client().add_category(&t.admin, &Symbol::new(&t.env, "plumber"));
+        t.client().add_category(&t.admin, &Symbol::new(&t.env, "welder"));
+
+        let cats = t.client().list_categories();
+        assert_eq!(cats.len(), 2);
+    }
+
+    #[test]
+    fn test_add_category_idempotent() {
+        let t = TestEnv::new();
+        t.client().add_category(&t.admin, &Symbol::new(&t.env, "plumber"));
+        t.client().add_category(&t.admin, &Symbol::new(&t.env, "plumber"));
+        assert_eq!(t.client().list_categories().len(), 1);
+    }
+
+    #[test]
+    fn test_remove_category() {
+        let t = TestEnv::new();
+        t.client().add_category(&t.admin, &Symbol::new(&t.env, "plumber"));
+        t.client().remove_category(&t.admin, &Symbol::new(&t.env, "plumber"));
+        assert_eq!(t.client().list_categories().len(), 0);
+    }
+
+    #[test]
+    fn test_register_valid_category_succeeds() {
+        let t = TestEnv::new();
+        t.client().add_curator(&t.admin, &t.curator);
+        t.client().add_category(&t.admin, &Symbol::new(&t.env, "plumber"));
+        // Should not panic
+        t.register_worker(&t.curator);
+    }
+
+    #[test]
+    #[should_panic(expected = "Unknown category")]
+    fn test_register_invalid_category_panics() {
+        let t = TestEnv::new();
+        t.client().add_curator(&t.admin, &t.curator);
+        t.client().add_category(&t.admin, &Symbol::new(&t.env, "welder"));
+        // "plumber" is not in the on-chain list
+        t.register_worker(&t.curator);
+    }
+
+    #[test]
+    fn test_register_no_categories_set_allows_any() {
+        let t = TestEnv::new();
+        t.client().add_curator(&t.admin, &t.curator);
+        // No categories set — any category is allowed
+        t.register_worker(&t.curator);
+    }
+
+    // -------------------------------------------------------------------------
+    // #530: Upgrade timelock tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_propose_upgrade_stores_pending() {
+        let t = TestEnv::new();
+        let hash = BytesN::from_array(&t.env, &[9u8; 32]);
+        t.client().propose_upgrade(&t.admin, &hash);
+
+        let pending = t.client().get_pending_upgrade().unwrap();
+        assert_eq!(pending.wasm_hash, hash);
+    }
+
+    #[test]
+    #[should_panic(expected = "Upgrade already pending")]
+    fn test_propose_upgrade_twice_panics() {
+        let t = TestEnv::new();
+        let hash = BytesN::from_array(&t.env, &[9u8; 32]);
+        t.client().propose_upgrade(&t.admin, &hash);
+        t.client().propose_upgrade(&t.admin, &hash);
+    }
+
+    #[test]
+    fn test_cancel_upgrade_removes_pending() {
+        let t = TestEnv::new();
+        let hash = BytesN::from_array(&t.env, &[9u8; 32]);
+        t.client().propose_upgrade(&t.admin, &hash);
+        t.client().cancel_upgrade(&t.admin);
+        assert!(t.client().get_pending_upgrade().is_none());
+    }
+
+    #[test]
+    #[should_panic(expected = "No pending upgrade")]
+    fn test_cancel_upgrade_no_pending_panics() {
+        let t = TestEnv::new();
+        t.client().cancel_upgrade(&t.admin);
+    }
+
+    #[test]
+    #[should_panic(expected = "Timelock not expired")]
+    fn test_execute_upgrade_before_timelock_panics() {
+        let t = TestEnv::new();
+        let hash = BytesN::from_array(&t.env, &[9u8; 32]);
+        t.client().propose_upgrade(&t.admin, &hash);
+        // Timelock not expired — should panic
+        t.client().execute_upgrade();
+    }
+
+    #[test]
+    #[should_panic(expected = "No pending upgrade")]
+    fn test_execute_upgrade_no_pending_panics() {
+        let t = TestEnv::new();
+        t.client().execute_upgrade();
     }
 }

@@ -3,6 +3,7 @@ import "./globals.css";
 import type { ReactNode } from "react";
 import { AuthProvider } from "@/context/AuthContext";
 import { WalletProvider } from "@/context/WalletContext";
+import { OnboardingProvider } from "@/context/OnboardingContext";
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "sonner";
 import PushNotificationPrompt from "@/components/PushNotificationPrompt";
@@ -54,11 +55,13 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem storageKey="bc_theme">
           <AuthProvider>
             <WalletProvider>
-              <OfflineBanner />
-              <ServiceWorkerRegister />
-              <WebVitalsReporter />
-              {children}
-              <PushNotificationPrompt />
+              <OnboardingProvider>
+                <OfflineBanner />
+                <ServiceWorkerRegister />
+                <WebVitalsReporter />
+                {children}
+                <PushNotificationPrompt />
+              </OnboardingProvider>
             </WalletProvider>
           </AuthProvider>
           <Toaster position="bottom-right" richColors closeButton />

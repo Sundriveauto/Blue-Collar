@@ -1,61 +1,53 @@
-import { useEffect, useState } from 'react'
-import { useAuth } from './useAuth'
+import { useEffect, useState } from "react";
+import { useAuth } from "./useAuth";
 
 export function useOnboarding() {
-  const { user } = useAuth()
-  const [showOnboarding, setShowOnboarding] = useState(false)
-  const [isLoading, setIsLoading] = useState(true)
+  const { user } = useAuth();
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   useEffect(() => {
-    if (!user) {
-      setIsLoading(false)
-      return
+    if (user && !user.onboardingCompleted) {
+      // Check if user has already dismissed onboarding in this session
+      const dismissed = sessionStorage.getItem("onboarding-dismissed");
+      if (!dismissed) {
+        setShowOnboarding(true);
+      }
     }
-
-    // Check if user has completed onboarding
-    const hasCompletedOnboarding = localStorage.getItem(`onboarding_${user.id}`)
-    if (!hasCompletedOnboarding && !user.onboardingCompleted) {
-      setShowOnboarding(true)
-    }
-    setIsLoading(false)
-  }, [user])
+  }, [user]);
 
   const completeOnboarding = async () => {
-    if (!user) return
+    if (!user) return;
 
     try {
-      // Call API to mark onboarding as complete
-      const response = await fetch('/api/users/onboarding/complete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      })
+      const response = await fetch("/api/auth/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ onboardingCompleted: true }),
+      });
 
       if (response.ok) {
-        localStorage.setItem(`onboarding_${user.id}`, 'true')
-        setShowOnboarding(false)
+        setShowOnboarding(false);
+        sessionStorage.setItem("onboarding-dismissed", "true");
       }
     } catch (error) {
-      console.error('Failed to complete onboarding:', error)
+      console.error("Failed to complete onboarding:", error);
     }
-  }
+  };
 
   const skipOnboarding = () => {
-    if (!user) return
-    localStorage.setItem(`onboarding_${user.id}`, 'true')
-    setShowOnboarding(false)
-  }
+    setShowOnboarding(false);
+    sessionStorage.setItem("onboarding-dismissed", "true");
+  };
 
   const restartOnboarding = () => {
-    if (!user) return
-    localStorage.removeItem(`onboarding_${user.id}`)
-    setShowOnboarding(true)
-  }
+    setShowOnboarding(true);
+    sessionStorage.removeItem("onboarding-dismissed");
+  };
 
   return {
     showOnboarding,
-    isLoading,
     completeOnboarding,
     skipOnboarding,
     restartOnboarding,
-  }
+  };
 }

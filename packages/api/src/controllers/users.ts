@@ -11,11 +11,12 @@ export async function updateProfile(req: Request, res: Response) {
   const userId = req.user?.id
   if (!userId) return res.status(401).json({ status: 'error', message: 'Unauthorized', code: 401 })
 
-  const { firstName, lastName, phone, bio } = req.body as {
+  const { firstName, lastName, phone, bio, onboardingCompleted } = req.body as {
     firstName?: string
     lastName?: string
     phone?: string
     bio?: string
+    onboardingCompleted?: boolean
   }
 
   try {
@@ -26,6 +27,7 @@ export async function updateProfile(req: Request, res: Response) {
         ...(lastName !== undefined && { lastName }),
         ...(phone !== undefined && { phone }),
         ...(bio !== undefined && { bio }),
+        ...(onboardingCompleted !== undefined && { onboardingCompleted }),
       },
     })
     return res.json({ data: sanitizeUser(user), status: 'success', code: 200 })

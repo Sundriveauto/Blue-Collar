@@ -1,81 +1,90 @@
 import type { Meta, StoryObj } from '@storybook/react'
-import WorkerCard from '@/components/WorkerCard'
-import type { Worker } from '@/types'
+import WorkerCard from './WorkerCard'
+import { CompareProvider } from '@/context/CompareContext'
 
 const meta: Meta<typeof WorkerCard> = {
   title: 'Components/WorkerCard',
   component: WorkerCard,
   tags: ['autodocs'],
+  decorators: [
+    (Story) => (
+      <CompareProvider>
+        <Story />
+      </CompareProvider>
+    ),
+  ],
+  argTypes: {
+    variant: {
+      control: 'select',
+      options: ['standard', 'compact', 'featured'],
+    },
+  },
 }
+
 export default meta
+type Story = StoryObj<typeof meta>
 
-type Story = StoryObj<typeof WorkerCard>
-
-const mockWorker: Worker = {
+const mockWorker = {
   id: '1',
   name: 'John Smith',
-  category: { id: '1', name: 'Plumber', slug: 'plumber' },
+  category: { id: '1', name: 'Plumber' },
   avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=John',
-  bio: 'Professional plumber with 10 years of experience. Specializing in residential and commercial plumbing.',
-  location: 'San Francisco, CA',
+  isVerified: true,
   averageRating: 4.8,
   reviewCount: 24,
-  isVerified: true,
+  bio: 'Professional plumber with 10+ years of experience',
+  location: 'San Francisco, CA',
   isActive: true,
-  createdAt: new Date(),
-  updatedAt: new Date(),
 }
 
-const mockWorkerNoRating: Worker = {
-  ...mockWorker,
-  id: '2',
-  name: 'Jane Doe',
-  averageRating: null,
-  reviewCount: 0,
-}
-
-const mockWorkerNoBio: Worker = {
-  ...mockWorker,
-  id: '3',
-  name: 'Bob Johnson',
-  bio: null,
-}
-
-export const Default: Story = {
+export const Standard: Story = {
   args: {
     worker: mockWorker,
+    variant: 'standard',
   },
 }
 
-export const NoRating: Story = {
+export const Compact: Story = {
   args: {
-    worker: mockWorkerNoRating,
+    worker: mockWorker,
+    variant: 'compact',
   },
 }
 
-export const NoBio: Story = {
+export const Featured: Story = {
   args: {
-    worker: mockWorkerNoBio,
+    worker: mockWorker,
+    variant: 'featured',
   },
 }
 
-export const NoAvatar: Story = {
+export const WithoutAvatar: Story = {
   args: {
     worker: {
       ...mockWorker,
-      id: '4',
       avatar: null,
     },
+    variant: 'standard',
   },
 }
 
-export const HighRating: Story = {
+export const WithoutRating: Story = {
   args: {
     worker: {
       ...mockWorker,
-      id: '5',
-      averageRating: 5.0,
-      reviewCount: 50,
+      averageRating: null,
+      reviewCount: 0,
     },
+    variant: 'standard',
+  },
+}
+
+export const Unverified: Story = {
+  args: {
+    worker: {
+      ...mockWorker,
+      isVerified: false,
+    },
+    variant: 'standard',
   },
 }

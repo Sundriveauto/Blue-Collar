@@ -58,6 +58,7 @@ export interface AuthUser {
   role: "user" | "curator" | "admin";
   verified: boolean;
   avatar?: string | null;
+  onboardingCompleted?: boolean;
 }
 
 // ─── Pagination ───────────────────────────────────────────────────────────────

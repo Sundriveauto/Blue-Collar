@@ -13,6 +13,12 @@ const meta: Meta<typeof WorkerCard> = {
       </CompareProvider>
     ),
   ],
+  argTypes: {
+    variant: {
+      control: 'select',
+      options: ['standard', 'compact', 'featured'],
+    },
+  },
 }
 
 export default meta
@@ -31,9 +37,24 @@ const mockWorker = {
   isActive: true,
 }
 
-export const Default: Story = {
+export const Standard: Story = {
   args: {
     worker: mockWorker,
+    variant: 'standard',
+  },
+}
+
+export const Compact: Story = {
+  args: {
+    worker: mockWorker,
+    variant: 'compact',
+  },
+}
+
+export const Featured: Story = {
+  args: {
+    worker: mockWorker,
+    variant: 'featured',
   },
 }
 
@@ -43,6 +64,7 @@ export const WithoutAvatar: Story = {
       ...mockWorker,
       avatar: null,
     },
+    variant: 'standard',
   },
 }
 
@@ -53,6 +75,7 @@ export const WithoutRating: Story = {
       averageRating: null,
       reviewCount: 0,
     },
+    variant: 'standard',
   },
 }
 
@@ -62,5 +85,6 @@ export const Unverified: Story = {
       ...mockWorker,
       isVerified: false,
     },
+    variant: 'standard',
   },
 }

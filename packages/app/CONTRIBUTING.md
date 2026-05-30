@@ -36,6 +36,43 @@ pnpm dev   # starts on :3001
 
 Figma design file: [BlueCollar UI Kit](https://www.figma.com/file/bluecollar-ui) *(request access from a maintainer)*
 
+## Testing
+
+### Unit & Component Tests
+
+```bash
+pnpm test              # run all tests
+pnpm test:a11y         # run accessibility tests only
+```
+
+### E2E Tests
+
+```bash
+pnpm test:e2e          # run Playwright tests
+pnpm test:e2e:ui       # run with interactive UI
+```
+
+### Accessibility Testing
+
+Accessibility tests run automatically on every page using [axe-core](https://github.com/dequelabs/axe-core). Tests fail on **critical** or **serious** violations.
+
+**To run locally:**
+```bash
+pnpm dev               # start the app
+pnpm test:e2e          # in another terminal
+```
+
+**Accessibility reports** are generated in `a11y-reports/` and included as CI artifacts. Review these to understand any violations found.
+
+**Common violations to fix:**
+- Missing `alt` text on images
+- Insufficient color contrast
+- Missing form labels
+- Improper heading hierarchy
+- Missing ARIA attributes
+
+See [WCAG 2.1 Guidelines](https://www.w3.org/WAI/WCAG21/quickref/) for details.
+
 ## PR Process
 
 1. Fork the repo and create a branch: `git checkout -b feat/your-feature`
@@ -44,6 +81,8 @@ Figma design file: [BlueCollar UI Kit](https://www.figma.com/file/bluecollar-ui)
    pnpm lint
    pnpm type-check
    pnpm build
+   pnpm test
+   pnpm test:e2e
    ```
 3. Open a pull request against `main` with a clear description
 4. All PRs require passing CI checks before merge

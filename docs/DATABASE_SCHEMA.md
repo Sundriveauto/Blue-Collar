@@ -1,5 +1,7 @@
 # Database Schema
 
+This document is derived from `packages/api/prisma/schema.prisma` and reflects the current Prisma data model. The ER diagram can be regenerated with `prisma-erd-generator`.
+
 Comprehensive documentation of the BlueCollar Prisma schema, including model descriptions, relationships, indexes, migration strategy, and data retention policies.
 
 ---

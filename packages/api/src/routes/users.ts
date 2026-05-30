@@ -7,6 +7,7 @@ import {
   deleteAccount,
   savePushSubscription,
   deletePushSubscription,
+  completeOnboarding,
 } from '../controllers/users.js'
 import { authenticate } from '../middleware/auth.js'
 
@@ -19,5 +20,6 @@ router.delete('/me', authenticate, deleteAccount)
 router.get('/me/bookmarks', authenticate, listMyBookmarks)
 router.post('/me/push-subscription', authenticate, savePushSubscription)
 router.delete('/me/push-subscription', authenticate, deletePushSubscription)
+router.post('/onboarding/complete', authenticate, completeOnboarding)
 
 export default router

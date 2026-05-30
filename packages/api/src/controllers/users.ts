@@ -152,3 +152,21 @@ export async function deletePushSubscription(req: Request, res: Response) {
     return res.status(500).json({ status: 'error', message: 'Failed to unsubscribe', code: 500 })
   }
 }
+
+// ── Onboarding ────────────────────────────────────────────────────────────
+
+export async function completeOnboarding(req: Request, res: Response) {
+  const userId = req.user?.id
+  if (!userId) return res.status(401).json({ status: 'error', message: 'Unauthorized', code: 401 })
+
+  try {
+    const user = await db.user.update({
+      where: { id: userId },
+      data: { onboardingCompleted: true },
+    })
+    return res.json({ data: sanitizeUser(user), status: 'success', message: 'Onboarding completed', code: 200 })
+  } catch (error) {
+    logger.error({ err: error }, '[completeOnboarding] error')
+    return res.status(500).json({ status: 'error', message: 'Failed to complete onboarding', code: 500 })
+  }
+}

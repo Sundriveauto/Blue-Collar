@@ -42,6 +42,7 @@ model User {
   twoFactorEnabled        Boolean   @default(false)
   twoFactorBackupCodes    String[]  @default([])
   referralCode            String?   @unique
+  onboardingCompleted     Boolean   @default(false)
   locationId              String?
   location                Location? @relation(fields: [locationId], references: [id])
   createdAt               DateTime  @default(now())

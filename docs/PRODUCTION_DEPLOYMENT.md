@@ -310,6 +310,55 @@ Example Docker logging options (already included in compose example):
 - `max-size=10m`
 - `max-file=5`
 
+## 5.3 Centralized Logging with Grafana Loki
+
+BlueCollar ships Loki + Promtail in `docker-compose.yml` for centralized log aggregation.
+
+### Services
+
+| Service  | Port | Purpose                          |
+|----------|------|----------------------------------|
+| Loki     | 3100 | Log storage and query engine     |
+| Promtail | —    | Log collector (Docker SD)        |
+
+Promtail uses Docker service discovery to tail all container stdout/stderr and labels each stream with `service` and `container`. JSON fields (`level`, `msg`, `err`) are promoted to Loki labels for the `api` service.
+
+### Grafana Setup
+
+The Loki datasource is auto-provisioned at `deploy/grafana/provisioning/datasources/loki.yml`. The **BlueCollar Log Explorer** dashboard (`deploy/grafana/dashboards/logs-explorer.json`) is loaded automatically when Grafana mounts `deploy/grafana/dashboards/` as its dashboard directory.
+
+### Common LogQL Queries
+
+```logql
+# All API logs
+{service="api"}
+
+# Only ERROR-level lines
+{service="api"} | json | level="error"
+
+# Filter by keyword
+{service="api"} |= "database"
+
+# Error rate per minute (for alerting / graphs)
+sum(rate({service="api"} |~ "(?i)error" [1m]))
+
+# Logs from a specific container
+{container="blue-collar-api-1"}
+
+# All containers, last 100 lines
+{container=~".+"}
+
+# Auth failures
+{service="api"} |= "Unauthorized"
+
+# Slow requests (>1000 ms, if API logs responseTime)
+{service="api"} | json | responseTime > 1000
+```
+
+### Alert: HighErrorLogRate
+
+Defined in `deploy/loki/alerts.yml`. Fires when the API emits more than **10 ERROR log lines per minute** for at least 1 minute. Alerts are forwarded to Alertmanager at `http://alertmanager:9093`.
+
 ## 5.3 Alerting
 
 Create alerts for:
@@ -376,3 +425,50 @@ Recovery sequence:
 - Rollback plan confirmed
 
 This deployment guide should be updated whenever infrastructure, contract IDs, or traffic architecture changes.
+
+
+## 8. Staging Environment
+
+Staging mirrors production configuration but targets Stellar **testnet** and an isolated database. It is deployed automatically on every merge to `develop`.
+
+### Services
+
+| Service | URL |
+|---------|-----|
+| API     | `https://api-staging.bluecollar.app` |
+| App     | `https://staging.bluecollar.app` |
+
+### Local Setup
+
+```bash
+cp packages/api/.env.staging.example  packages/api/.env.staging
+cp packages/app/.env.staging.example  packages/app/.env.staging
+# Fill in real values, then:
+docker compose -f docker-compose.staging.yml up -d --build
+```
+
+### Environment Variables
+
+- `packages/api/.env.staging.example` — API staging variables (Stellar testnet, staging DB)
+- `packages/app/.env.staging.example` — App staging variables (`NEXT_PUBLIC_STELLAR_NETWORK=TESTNET`)
+
+### CI/CD
+
+`.github/workflows/deploy-staging.yml` triggers on push to `develop`:
+
+1. Writes env files from GitHub secrets (`STAGING_API_ENV`, `STAGING_APP_ENV`)
+2. SSHes into the staging host and runs `docker compose -f docker-compose.staging.yml up -d --build`
+3. Runs `prisma migrate deploy` inside the API container
+4. Runs `deploy/scripts/smoke-tests-staging.sh` — checks `/health`, `/api/categories`, and the app homepage
+
+### Required GitHub Secrets
+
+| Secret | Description |
+|--------|-------------|
+| `STAGING_HOST` | Staging server IP / hostname |
+| `STAGING_USER` | SSH username |
+| `STAGING_SSH_KEY` | Private SSH key |
+| `STAGING_API_ENV` | Full contents of `packages/api/.env.staging` |
+| `STAGING_APP_ENV` | Full contents of `packages/app/.env.staging` |
+| `STAGING_API_URL` | Public API URL for smoke tests |
+| `STAGING_APP_URL` | Public App URL for smoke tests |

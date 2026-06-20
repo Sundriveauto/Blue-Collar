@@ -106,6 +106,8 @@ model Worker {
   portfolioItems      PortfolioItem[]
   subscription        Subscription?
   jobApplications     JobApplication[]
+  profileViews        ProfileView[]
+  analytics           WorkerAnalytics?
 }
 
 model Bookmark {
@@ -355,6 +357,35 @@ model JobApplication {
   updatedAt   DateTime          @updatedAt
 
   @@unique([jobId, workerId])
+}
+
+// ─── Issue #analytics: Advanced Analytics & Reporting ────────────────────────
+
+model ProfileView {
+  id        String   @id @default(cuid())
+  workerId  String
+  ip        String
+  viewedAt  DateTime @default(now())
+  worker    Worker   @relation(fields: [workerId], references: [id], onDelete: Cascade)
+
+  @@index([workerId, ip, viewedAt])
+}
+
+model WorkerAnalytics {
+  id            String   @id @default(cuid())
+  workerId      String   @unique
+  totalViews    Int      @default(0)
+  uniqueViews   Int      @default(0)
+  totalTips     Float    @default(0)
+  tipCount      Int      @default(0)
+  bookmarkCount Int      @default(0)
+  contactCount  Int      @default(0)
+  responseRate  Float    @default(0)
+  avgRating     Float    @default(0)
+  reviewCount   Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  worker        Worker   @relation(fields: [workerId], references: [id], onDelete: Cascade)
 }
 
 // ─── Enums ────────────────────────────────────────────────────────────────────

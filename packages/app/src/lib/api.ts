@@ -4,7 +4,19 @@
  * clearing auth state and redirecting to /auth/login.
  */
 
-import type { Worker, Category, ApiResponse, Meta, Review, RatingDistributionEntry } from "@/types";
+import type {
+  Worker,
+  Category,
+  ApiResponse,
+  Meta,
+  Review,
+  RatingDistributionEntry,
+  WorkerAnalytics,
+  CuratorAnalytics,
+  PlatformAnalytics,
+  ViewTrend,
+  TopWorker,
+} from "@/types";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000/api";
 const TOKEN_KEY = "bc_token";
@@ -147,3 +159,25 @@ export const changePassword = (currentPassword: string, newPassword: string) =>
 
 export const deleteAccount = () =>
   request<{ status: string; message: string }>("/users/me", { method: "DELETE" });
+
+// Analytics
+export const getWorkerAnalytics = (workerId: string) =>
+  request<ApiResponse<WorkerAnalytics>>(`/workers/${workerId}/analytics`);
+
+export const getWorkerViewTrends = (workerId: string, days = 30) =>
+  request<ApiResponse<ViewTrend[]>>(`/workers/${workerId}/analytics/trends?days=${days}`);
+
+export const getCuratorAnalytics = () =>
+  request<ApiResponse<CuratorAnalytics>>("/analytics/curator");
+
+export const getPlatformAnalytics = () =>
+  request<ApiResponse<PlatformAnalytics>>("/analytics/platform");
+
+export const getTopWorkers = (metric = "views", limit = 10) =>
+  request<ApiResponse<TopWorker[]>>(`/analytics/top-workers?metric=${metric}&limit=${limit}`);
+
+export const exportCuratorAnalyticsCsv = () =>
+  `${BASE}/analytics/export/curator`;
+
+export const exportPlatformAnalyticsCsv = () =>
+  `${BASE}/analytics/export/platform`;

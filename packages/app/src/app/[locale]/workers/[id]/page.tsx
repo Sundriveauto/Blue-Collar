@@ -1,17 +1,14 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { BadgeCheck, MapPin, Mail, Phone, ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
-import TipModal from "@/components/TipModal";
-import TransactionHistory from "@/components/TransactionHistory";
-import BookmarkButton from "@/components/BookmarkButton";
-import StarRating from "@/components/StarRating";
+import PortfolioGallery from "@/components/PortfolioGallery";
 import ReviewsSection from "@/components/ReviewsSection";
-import QRCodeButton from "@/components/QRCodeButton";
 import EmptyState from "@/components/EmptyState";
 import AvailabilityCalendar from "@/components/AvailabilityCalendar";
-import ZoomableAvatar from "@/components/ZoomableAvatar";
-import ContactModal from "@/components/ContactModal";
+import { WorkerHeader } from "./components/WorkerHeader";
+import { WorkerContactDetails } from "./components/WorkerContactDetails";
+import { WorkerTipSection } from "./components/WorkerTipSection";
 import type { Worker, ApiResponse, Review, RatingDistributionEntry } from "@/types";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000/api";
@@ -69,13 +66,6 @@ export default async function WorkerProfilePage({
   const worker = data as Worker;
   const { data: reviews, averageRating, reviewCount, distribution } = reviewsData;
 
-  const initials = worker.name
-    .split(" ")
-    .map((n) => n[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-
   return (
     <div className="mx-auto max-w-2xl px-4 py-10">
       <Link
@@ -87,80 +77,13 @@ export default async function WorkerProfilePage({
       </Link>
 
       <div className="rounded-2xl border bg-white p-8 shadow-sm">
-        {/* Avatar + name */}
-        <div className="flex items-start gap-5">
-          {worker.avatar ? (
-            <ZoomableAvatar
-              src={worker.avatar}
-              alt={worker.name}
-              className="h-20 w-20 rounded-full object-cover ring-2 ring-blue-100 cursor-zoom-in"
-            />
-          ) : (
-            <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 font-bold text-2xl">
-              {initials}
-            </div>
-          )}
+        <WorkerHeader worker={worker} averageRating={averageRating} reviewCount={reviewCount} />
 
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 text-xl font-bold text-gray-900">
-              {worker.name}
-              {worker.isVerified && (
-                <BadgeCheck size={20} className="text-blue-500" aria-label="Verified" />
-              )}
-              <QRCodeButton
-                workerName={worker.name}
-                workerId={worker.id}
-              />
-            </div>
-            <span className="mt-1 inline-block rounded-full bg-blue-50 px-3 py-0.5 text-sm font-medium text-blue-600">
-              {worker.category.name}
-            </span>
-            {averageRating != null && (
-              <div className="mt-2 flex items-center gap-1.5">
-                <StarRating rating={averageRating} />
-                <span className="text-sm text-gray-500">
-                  {averageRating.toFixed(1)} ({reviewCount} review{reviewCount !== 1 ? "s" : ""})
-                </span>
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2">
-            <BookmarkButton workerId={worker.id} />
-            <ContactModal workerId={worker.id} workerName={worker.name} />
-          </div>
-        </div>
-
-        {/* Bio */}
         {worker.bio && (
           <p className="mt-6 text-sm leading-relaxed text-gray-600">{worker.bio}</p>
         )}
 
-        {/* Details */}
-        <div className="mt-6 flex flex-col gap-2.5">
-          {worker.location && (
-            <div className="flex items-center gap-2 text-sm text-gray-500">
-              <MapPin size={15} className="shrink-0" />
-              {worker.location}
-            </div>
-          )}
-          {worker.email && (
-            <div className="flex items-center gap-2 text-sm text-gray-500">
-              <Mail size={15} className="shrink-0" />
-              <a href={`mailto:${worker.email}`} className="hover:text-blue-600 transition-colors">
-                {worker.email}
-              </a>
-            </div>
-          )}
-          {worker.phone && (
-            <div className="flex items-center gap-2 text-sm text-gray-500">
-              <Phone size={15} className="shrink-0" />
-              <a href={`tel:${worker.phone}`} className="hover:text-blue-600 transition-colors">
-                {worker.phone}
-              </a>
-            </div>
-          )}
-        </div>
+        <WorkerContactDetails worker={worker} />
 
         {/* Availability calendar */}
         <div className="mt-8 border-t pt-6">
@@ -177,24 +100,7 @@ export default async function WorkerProfilePage({
 
         {/* Tip section */}
         <div className="mt-8 border-t pt-6">
-          {worker.walletAddress ? (
-            <>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-700">Support this worker</p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    Send XLM directly to their Stellar wallet
-                  </p>
-                </div>
-                <TipModal workerName={worker.name} walletAddress={worker.walletAddress} />
-              </div>
-              <TransactionHistory walletAddress={worker.walletAddress} />
-            </>
-          ) : (
-            <p className="text-sm text-gray-400 italic">
-              This worker hasn&apos;t connected a wallet yet.
-            </p>
-          )}
+          <WorkerTipSection workerName={worker.name} walletAddress={worker.walletAddress} />
         </div>
 
         {/* Reviews section */}

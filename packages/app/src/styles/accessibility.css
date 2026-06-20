@@ -1,0 +1,51 @@
+/*
+ * WCAG 2.1 AA Accessibility Fixes
+ */
+
+:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.skip-to-main {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 9999;
+  background: #1d4ed8;
+  color: #ffffff;
+  padding: 0.75rem 1.25rem;
+  font-weight: 600;
+  border-radius: 0 0 6px 0;
+  text-decoration: none;
+}
+.skip-to-main:focus {
+  left: 0;
+}
+
+button,
+a,
+[role="button"],
+input[type="checkbox"],
+input[type="radio"] {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+body {
+  color: #111827;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

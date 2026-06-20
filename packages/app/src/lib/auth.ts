@@ -77,4 +77,10 @@ export const authApi = {
 
   resetPassword: (token: string, password: string) =>
     put<{ message: string }>("/auth/reset-password", { token, password }),
+
+  verifyAccount: (token: string) =>
+    put<{ message: string }>("/auth/verify-account", { token }),
+
+  resendVerification: (email: string) =>
+    post<{ message: string }>("/auth/resend-verification", { email }),
 };

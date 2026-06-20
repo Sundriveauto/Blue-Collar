@@ -1,38 +1,28 @@
-import { readFileSync } from 'node:fs'
-import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { transporter } from './transport.js'
-
-const __dirname = dirname(fileURLToPath(import.meta.url))
-
-function loadTemplate(name: string): string {
-  return readFileSync(join(__dirname, 'templates', name), 'utf-8')
-}
+import { logger } from '../config/logger.js'
+import { render } from './templateEngine.js'
 
 const APP_URL = process.env.APP_URL ?? 'http://localhost:3000'
 const FROM = `BlueCollar <${process.env.MAIL_USER}>`
 
 export async function sendVerificationEmail(to: string, name: string, token: string) {
-  const html = loadTemplate('verify-email.html')
-    .replace(/{{name}}/g, name)
-    .replace(/{{verificationLink}}/g, `${APP_URL}/api/auth/verify-account?token=${token}`)
-
+  const html = render('verify-email.html', {
+    name,
+    verificationLink: `${APP_URL}/api/auth/verify-account?token=${token}`,
+  })
   await transporter.sendMail({ from: FROM, to, subject: 'Verify your BlueCollar email', html })
 }
 
 export async function sendPasswordResetEmail(to: string, name: string, token: string) {
-  const html = loadTemplate('reset-password.html')
-    .replace(/{{name}}/g, name)
-    .replace(/{{resetLink}}/g, `${APP_URL}/reset-password?token=${token}`)
-
+  const html = render('reset-password.html', {
+    name,
+    resetLink: `${APP_URL}/reset-password?token=${token}`,
+  })
   await transporter.sendMail({ from: FROM, to, subject: 'Reset your BlueCollar password', html })
 }
 
 export async function sendWelcomeEmail(to: string, name: string) {
-  const html = loadTemplate('welcome.html')
-    .replace(/{{name}}/g, name)
-    .replace(/{{appUrl}}/g, APP_URL)
-
+  const html = render('welcome.html', { name, appUrl: APP_URL })
   await transporter.sendMail({ from: FROM, to, subject: 'Welcome to BlueCollar 🎉', html })
 }
 
@@ -60,7 +50,7 @@ export async function sendModerationEmail(
     html: `<p>Hi <strong>${firstName}</strong>, your review has been <strong>${action}</strong> by our moderation team.</p>`,
   })
   if ((transporter as any).options?.jsonTransport) {
-    console.log('[mailer] Moderation email (dev stub):', JSON.parse((info as any).message))
+    logger.debug({ message: JSON.parse((info as any).message) }, '[mailer] Moderation email (dev stub)')
   }
 }
 

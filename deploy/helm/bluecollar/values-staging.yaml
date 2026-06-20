@@ -1,0 +1,168 @@
+# Staging environment values for Blue-Collar Helm chart
+
+replicaCount: 2
+
+image:
+  repository: <ECR_REGISTRY>/bluecollar-api
+  tag: staging
+  pullPolicy: Always
+
+nameOverride: ""
+fullnameOverride: "bluecollar-staging"
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: "bluecollar-staging"
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "9464"
+  prometheus.io/path: "/metrics"
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: true
+
+service:
+  type: ClusterIP
+  port: 3000
+  targetPort: 3000
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-staging"
+    nginx.ingress.kubernetes.io/rate-limit: "1000"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  hosts:
+    - host: api-staging.bluecollar.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: api-staging-tls
+      hosts:
+        - api-staging.bluecollar.example.com
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 200m
+    memory: 512Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      podAffinityTerm:
+        labelSelector:
+          matchExpressions:
+          - key: app
+            operator: In
+            values:
+            - bluecollar-api
+        topologyKey: kubernetes.io/hostname
+
+env:
+  - name: NODE_ENV
+    value: "staging"
+  - name: PORT
+    value: "3000"
+  - name: LOG_LEVEL
+    value: "debug"
+  - name: ENABLE_DEBUG_LOGGING
+    value: "true"
+  - name: API_URL
+    value: "https://api-staging.bluecollar.example.com"
+  - name: FRONTEND_URL
+    value: "https://staging.bluecollar.example.com"
+  - name: STELLAR_NETWORK
+    value: "testnet"
+  - name: JAEGER_ENDPOINT
+    value: "http://jaeger-collector.monitoring:14268/api/traces"
+  - name: PROMETHEUS_PORT
+    value: "9464"
+
+envFrom:
+  - secretRef:
+      name: bluecollar-staging-secrets
+  - configMapRef:
+      name: bluecollar-staging-config
+
+postgresql:
+  enabled: false
+  external:
+    host: "staging-db.bluecollar.internal"
+    port: 5432
+    database: "bluecollar"
+    username: "bluecollar_user"
+    existingSecret: "staging-db-credentials"
+    existingSecretPasswordKey: "password"
+
+redis:
+  enabled: false
+  external:
+    host: "staging-redis.bluecollar.internal"
+    port: 6379
+    existingSecret: "staging-redis-credentials"
+    existingSecretPasswordKey: "password"
+
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    scrapeTimeout: 10s
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 3000
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 3000
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+volumeMounts:
+  - name: tmp
+    mountPath: /tmp
+  - name: cache
+    mountPath: /app/.cache
+
+volumes:
+  - name: tmp
+    emptyDir: {}
+  - name: cache
+    emptyDir: {}

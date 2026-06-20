@@ -3,10 +3,11 @@
   "info": {
     "title": "BlueCollar API",
     "version": "1.0.0",
-    "description": "REST API for the BlueCollar decentralised skilled-worker platform built on Stellar."
+    "description": "REST API for the BlueCollar decentralised skilled-worker platform built on Stellar.\n\n## API Versioning\n\nBlueCollar uses **URL-based versioning**. All endpoints are prefixed with `/api/v1/`.\n\n| Version | Base Path    | Status      | Sunset Date |\n|---------|--------------|-------------|-------------|\n| v1      | `/api/v1/*`  | ✅ Current  | —           |\n| —       | `/api/*`     | ⚠️ Deprecated | 2027-01-01 |\n\nRequests to unversioned `/api/*` paths receive a `301` redirect to `/api/v1/*` plus deprecation headers:\n```\nDeprecation: true\nWarning: 299 - \"Unversioned API path is deprecated. Use /api/v1/* instead.\"\nSunset: Sat, 01 Jan 2027 00:00:00 GMT\n```\n\nUse `GET /api/v1/version` to discover the current API version at runtime."
   },
   "servers": [
-    { "url": "http://localhost:3000/api", "description": "Local development" }
+    { "url": "http://localhost:3000/api/v1", "description": "Local development (v1)" },
+    { "url": "http://localhost:3000/api", "description": "Local development (deprecated — redirects to v1)" }
   ],
   "components": {
     "securitySchemes": {
@@ -84,6 +85,33 @@
     }
   },
   "paths": {
+    "/version": {
+      "get": {
+        "tags": ["Meta"],
+        "summary": "Get current API version",
+        "description": "Returns the current API version, supported versions, and deprecation info.",
+        "responses": {
+          "200": {
+            "description": "Version info",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "version": { "type": "string", "example": "1.0.0" },
+                    "apiVersion": { "type": "string", "example": "v1" },
+                    "status": { "type": "string", "example": "current" },
+                    "supported": { "type": "array", "items": { "type": "string" }, "example": ["v1"] },
+                    "deprecated": { "type": "array", "items": { "type": "string" }, "example": [] },
+                    "sunset": { "type": "string", "nullable": true, "example": null }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/register": {
       "post": {
         "tags": ["Auth"],
@@ -481,9 +509,185 @@
       }
     }
   },
+    "/health": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Liveness check",
+        "description": "Returns 200 immediately. Used by load balancers and Docker to verify the process is alive.",
+        "responses": {
+          "200": {
+            "description": "Service is alive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "ok" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Readiness check",
+        "description": "Checks database and Redis connectivity. Returns 200 when all dependencies are healthy, 503 when any dependency is down.",
+        "responses": {
+          "200": {
+            "description": "All dependencies healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "ok" },
+                    "service": { "type": "string", "example": "bluecollar-api" },
+                    "checks": {
+                      "type": "object",
+                      "properties": {
+                        "database": { "type": "object", "properties": { "status": { "type": "string" }, "latencyMs": { "type": "integer" } } },
+                        "redis": { "type": "object", "properties": { "status": { "type": "string" }, "latencyMs": { "type": "integer" } } }
+                      }
+                    },
+                    "timestamp": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          },
+          "503": { "description": "One or more dependencies are unhealthy" }
+        }
+      }
+    },
+    "/api/v1/admin/export/workers": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Export workers as CSV or JSON",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "format", "in": "query", "required": false, "schema": { "type": "string", "enum": ["csv", "json"], "default": "json" } }
+        ],
+        "responses": {
+          "200": { "description": "Streamed worker data in requested format" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden — admin only" },
+          "429": { "description": "Rate limit exceeded — 1 export per minute per admin" }
+        }
+      }
+    },
+    "/api/v1/admin/export/users": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Export users as CSV or JSON",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "format", "in": "query", "required": false, "schema": { "type": "string", "enum": ["csv", "json"], "default": "json" } }
+        ],
+        "responses": {
+          "200": { "description": "Streamed user data in requested format" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden — admin only" },
+          "429": { "description": "Rate limit exceeded — 1 export per minute per admin" }
+        }
+      }
+    }
+  },
+  "x-method-override": {
+    "title": "Method Override Pattern for File Uploads",
+    "description": "BlueCollar uses the method-override pattern to support file uploads with PUT semantics. This section explains why and how.",
+    "why": "HTML forms and multipart/form-data requests only support GET and POST methods. To update a resource with a file attachment using PUT semantics, we use the X-HTTP-Method header to override the actual HTTP method.",
+    "pattern": {
+      "standard_put": {
+        "description": "Standard PUT request (JSON, no files)",
+        "method": "PUT",
+        "headers": {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer <token>"
+        },
+        "example": "curl -X PUT /api/workers/123 -H 'Content-Type: application/json' -d '{\"name\":\"Updated Name\"}'"
+      },
+      "multipart_put": {
+        "description": "Multipart PUT request with file upload (uses method override)",
+        "method": "POST",
+        "headers": {
+          "X-HTTP-Method": "PUT",
+          "Content-Type": "multipart/form-data",
+          "Authorization": "Bearer <token>"
+        },
+        "note": "Send as POST with X-HTTP-Method: PUT header. The method-override middleware rewrites this to PUT before route handling.",
+        "example": "curl -X POST /api/workers/123 -H 'X-HTTP-Method: PUT' -F 'name=Updated Name' -F 'avatar=@avatar.jpg'"
+      }
+    },
+    "implementation": {
+      "middleware": "The API uses the npm package 'method-override' configured to check the X-HTTP-Method header.",
+      "location": "packages/api/src/index.ts — middleware stack initialization",
+      "order": "Applied early in the middleware chain, before route handlers",
+      "behavior": "If X-HTTP-Method header is present, req.method is rewritten to the specified value (e.g., PUT, PATCH, DELETE)"
+    },
+    "endpoints_using_method_override": [
+      {
+        "endpoint": "PUT /api/workers/:id",
+        "description": "Update worker with optional file upload",
+        "supports_multipart": true,
+        "example_curl": "curl -X POST /api/workers/123 -H 'X-HTTP-Method: PUT' -H 'Authorization: Bearer $TOKEN' -F 'name=Jane' -F 'avatar=@avatar.jpg'"
+      },
+      {
+        "endpoint": "PATCH /api/users/:id",
+        "description": "Update user profile with optional avatar",
+        "supports_multipart": true,
+        "example_curl": "curl -X POST /api/users/456 -H 'X-HTTP-Method: PATCH' -H 'Authorization: Bearer $TOKEN' -F 'bio=New bio' -F 'avatar=@profile.jpg'"
+      }
+    ],
+    "client_implementation": {
+      "javascript_fetch": {
+        "description": "Using Fetch API with FormData",
+        "code": "const formData = new FormData();\nformData.append('name', 'Updated Name');\nformData.append('avatar', fileInput.files[0]);\n\nfetch('/api/workers/123', {\n  method: 'POST',\n  headers: {\n    'X-HTTP-Method': 'PUT',\n    'Authorization': `Bearer ${token}`\n  },\n  body: formData\n});"
+      },
+      "axios": {
+        "description": "Using Axios with FormData",
+        "code": "const formData = new FormData();\nformData.append('name', 'Updated Name');\nformData.append('avatar', fileInput.files[0]);\n\naxios.post('/api/workers/123', formData, {\n  headers: {\n    'X-HTTP-Method': 'PUT',\n    'Authorization': `Bearer ${token}`,\n    'Content-Type': 'multipart/form-data'\n  }\n});"
+      },
+      "curl": {
+        "description": "Using cURL command line",
+        "code": "curl -X POST /api/workers/123 \\\n  -H 'X-HTTP-Method: PUT' \\\n  -H 'Authorization: Bearer $TOKEN' \\\n  -F 'name=Updated Name' \\\n  -F 'avatar=@/path/to/avatar.jpg'"
+      }
+    },
+    "common_mistakes": [
+      {
+        "mistake": "Sending X-HTTP-Method header with actual PUT method",
+        "problem": "The header is ignored; multipart data is not parsed correctly",
+        "solution": "Always use POST as the actual HTTP method when including X-HTTP-Method header"
+      },
+      {
+        "mistake": "Forgetting to set Content-Type to multipart/form-data",
+        "problem": "Form fields are not parsed; file upload fails",
+        "solution": "Let the client library set this automatically (Fetch/Axios do this), or set it explicitly"
+      },
+      {
+        "mistake": "Using X-HTTP-Method for JSON requests",
+        "problem": "Unnecessary and confusing; standard PUT works fine for JSON",
+        "solution": "Only use X-HTTP-Method when uploading files with multipart/form-data"
+      }
+    ],
+    "why_not_standard_put": {
+      "reason": "HTML forms cannot send PUT requests with file uploads",
+      "details": "The HTML form element only supports GET and POST. To support file uploads in web browsers, we must use POST. The X-HTTP-Method header allows us to semantically indicate PUT intent while using POST for transport.",
+      "alternatives_considered": [
+        "Separate endpoints for file uploads (e.g., PUT /api/workers/:id/avatar) — adds complexity",
+        "Always use POST for updates — semantically incorrect",
+        "Use GraphQL mutations — overkill for this use case"
+      ]
+    }
+  },
   "tags": [
     { "name": "Auth", "description": "Authentication and account management" },
     { "name": "Categories", "description": "Worker categories" },
-    { "name": "Workers", "description": "Worker listings — public reads, curator/admin writes" }
+    { "name": "Workers", "description": "Worker listings — public reads, curator/admin writes" },
+    { "name": "Admin", "description": "Admin-only operations" },
+    { "name": "Health", "description": "Liveness and readiness probes" }
   ]
 }

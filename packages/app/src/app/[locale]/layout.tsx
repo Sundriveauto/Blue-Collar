@@ -10,6 +10,8 @@ import { getMessages } from 'next-intl/server'
 import CompareDrawer from "@/components/CompareDrawer";
 import BottomNav from "@/components/BottomNav";
 import OnboardingTour from "@/components/OnboardingTour";
+import WebVitalsReporter from "@/components/WebVitalsReporter";
+import OfflineBanner from "@/components/OfflineBanner";
 
 export default async function LocaleLayout({ 
   children, 
@@ -28,6 +30,8 @@ export default async function LocaleLayout({
             <AuthProvider>
               <WalletProvider>
                 <CompareProvider>
+                  <WebVitalsReporter />
+                  <OfflineBanner />
                   {children}
                   <CompareDrawer />
                   <OnboardingTour />

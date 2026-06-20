@@ -1,0 +1,50 @@
+name: Performance Regression Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  PNPM_VERSION: 9
+
+jobs:
+  performance:
+    name: API Performance Benchmarks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/api
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: .
+
+      - name: Run performance benchmarks
+        run: pnpm test:perf
+        env:
+          JWT_SECRET: test-secret
+          DATABASE_URL: postgresql://localhost:5432/bluecollar_test
+          NODE_ENV: test
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-results
+          path: packages/api/performance-results/
+          retention-days: 30

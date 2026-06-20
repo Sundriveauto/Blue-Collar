@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { ReactNode, ChangeEvent } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { X, Loader2, CheckCircle2, AlertCircle, ExternalLink } from "lucide-react";
+import { X, Loader2, CheckCircle2, AlertCircle, ExternalLink, Zap } from "lucide-react";
 import {
   isConnected,
   requestAccess,
@@ -12,18 +12,16 @@ import {
 } from "@stellar/freighter-api";
 import { cn } from "@/lib/utils";
 
-// ─── Stellar / Soroban constants ────────────────────────────────────────────
 const NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
 const HORIZON_URL = "https://horizon-testnet.stellar.org";
 const SOROBAN_RPC = "https://soroban-testnet.stellar.org";
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- reserved for Soroban contract path
 const MARKET_CONTRACT_ID = process.env.NEXT_PUBLIC_MARKET_CONTRACT_ID ?? "";
-// XLM native asset contract on testnet — reserved for future Soroban path
-// const XLM_TOKEN_CONTRACT = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC";
 const STROOPS_PER_XLM = 10_000_000n;
 const EXPLORER_BASE = "https://stellar.expert/explorer/testnet/tx";
+const NETWORK_FEE = 0.00001; // XLM
 
-type TxStatus = "idle" | "pending" | "success" | "error";
+type TxStatus = "idle" | "signing" | "pending" | "success" | "error";
+type ErrorType = "freighter_missing" | "insufficient_balance" | "user_rejected" | "network_error" | "unknown";
 
 interface Props {
   workerName: string;
@@ -31,20 +29,21 @@ interface Props {
   trigger?: ReactNode;
 }
 
-export default function TipModal({ workerName, walletAddress, trigger }: Props) {
+export default function TipModalEnhanced({ workerName, walletAddress, trigger }: Props) {
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState("");
+  const [selectedToken, setSelectedToken] = useState("XLM");
   const [status, setStatus] = useState<TxStatus>("idle");
   const [txHash, setTxHash] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [freighterMissing, setFreighterMissing] = useState(false);
+  const [errorType, setErrorType] = useState<ErrorType | null>(null);
 
   const reset = () => {
     setAmount("");
     setStatus("idle");
     setTxHash(null);
     setErrorMsg(null);
-    setFreighterMissing(false);
+    setErrorType(null);
   };
 
   const handleOpenChange = (val: boolean) => {
@@ -52,26 +51,29 @@ export default function TipModal({ workerName, walletAddress, trigger }: Props) 
     if (!val) reset();
   };
 
+  const calculateFee = () => NETWORK_FEE;
+  const total = amount ? (Number(amount) + calculateFee()).toFixed(7) : "0";
+
   const sendTip = async () => {
     if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) return;
 
-    setStatus("pending");
+    setStatus("signing");
     setErrorMsg(null);
+    setErrorType(null);
 
     try {
-      // 1. Check Freighter is installed
       const connected = await isConnected();
       if (!connected.isConnected) {
-        setFreighterMissing(true);
+        setErrorType("freighter_missing");
+        setErrorMsg("Freighter wallet not detected");
         setStatus("error");
         return;
       }
 
-      // 2. Request wallet access & get public key
+      setStatus("pending");
       await requestAccess();
       const { address: senderAddress } = await getAddress();
 
-      // 3. Build the Soroban transaction via RPC
       const amountInStroops = BigInt(Math.round(Number(amount) * Number(STROOPS_PER_XLM)));
 
       const buildRes = await fetch(`${SOROBAN_RPC}`, {
@@ -82,21 +84,22 @@ export default function TipModal({ workerName, walletAddress, trigger }: Props) 
           id: 1,
           method: "simulateTransaction",
           params: {
-            transaction: await buildTipTxXdr(
-              senderAddress,
-              walletAddress,
-              amountInStroops
-            ),
+            transaction: await buildTipTxXdr(senderAddress, walletAddress, amountInStroops),
           },
         }),
       });
 
       const simulation = await buildRes.json();
       if (simulation.error || simulation.result?.error) {
-        throw new Error(simulation.error?.message ?? simulation.result?.error ?? "Simulation failed");
+        const errMsg = simulation.error?.message ?? simulation.result?.error ?? "Simulation failed";
+        if (errMsg.includes("insufficient")) {
+          setErrorType("insufficient_balance");
+        } else {
+          setErrorType("network_error");
+        }
+        throw new Error(errMsg);
       }
 
-      // 4. Assemble the real transaction with simulation footprint
       const assembledXdr = await assembleTipTx(
         senderAddress,
         walletAddress,
@@ -104,12 +107,10 @@ export default function TipModal({ workerName, walletAddress, trigger }: Props) 
         simulation.result
       );
 
-      // 5. Sign with Freighter
       const { signedTxXdr } = await signTransaction(assembledXdr, {
         networkPassphrase: NETWORK_PASSPHRASE,
       });
 
-      // 6. Submit to Horizon
       const submitRes = await fetch(`${HORIZON_URL}/transactions`, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -126,137 +127,224 @@ export default function TipModal({ workerName, walletAddress, trigger }: Props) 
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Unknown error";
       setErrorMsg(msg);
+      if (!errorType) setErrorType("unknown");
       setStatus("error");
     }
   };
-
-  const isLoading = status === "pending";
 
   return (
     <Dialog.Root open={open} onOpenChange={handleOpenChange}>
       <Dialog.Trigger asChild>
         {trigger ?? (
-          <button className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors">
+          <button className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors">
+            <Zap size={16} />
             Send Tip
           </button>
         )}
       </Dialog.Trigger>
 
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-6 shadow-xl data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95">
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white dark:bg-gray-900 p-6 shadow-2xl">
           {/* Header */}
-          <div className="flex items-start justify-between">
+          <div className="flex items-start justify-between mb-6">
             <div>
-              <Dialog.Title className="text-lg font-semibold text-gray-900">
+              <Dialog.Title className="text-xl font-bold text-gray-900 dark:text-white">
                 Send a Tip
               </Dialog.Title>
-              <Dialog.Description className="mt-0.5 text-sm text-gray-500">
-                Send XLM directly to {workerName}
+              <Dialog.Description className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Reward {workerName} for excellent service
               </Dialog.Description>
             </div>
-            <Dialog.Close className="rounded-md p-1 text-gray-400 hover:text-gray-600 transition-colors">
-              <X size={18} />
+            <Dialog.Close className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+              <X size={20} />
             </Dialog.Close>
           </div>
 
-          <div className="mt-5 flex flex-col gap-4">
-            {/* Worker wallet address */}
-            <div>
-              <p className="mb-1 text-xs font-medium text-gray-500 uppercase tracking-wide">
-                Worker Wallet
+          <div className="space-y-4">
+            {/* Worker Info */}
+            <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 p-4 border border-blue-200 dark:border-blue-900">
+              <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide mb-2">
+                Recipient
               </p>
-              <p className="rounded-lg bg-gray-50 px-3 py-2 font-mono text-xs text-gray-700 break-all border">
+              <p className="font-mono text-sm text-gray-700 dark:text-gray-300 break-all">
                 {walletAddress}
               </p>
             </div>
 
-            {/* Amount input */}
-            {status === "idle" && (
-              <div>
-                <label
-                  htmlFor="tip-amount"
-                  className="mb-1.5 block text-sm font-medium text-gray-700"
-                >
-                  Amount (XLM)
-                </label>
-                <div className="relative">
-                  <input
-                    id="tip-amount"
-                    type="number"
-                    min="0.0000001"
-                    step="0.1"
-                    placeholder="e.g. 5"
-                    value={amount}
-                    onChange={(e: ChangeEvent<HTMLInputElement>) => setAmount(e.target.value)}
-                    className="w-full rounded-lg border px-3 py-2.5 pr-14 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-gray-400">
-                    XLM
-                  </span>
+            {/* Amount Input */}
+            {(status === "idle" || status === "signing") && (
+              <>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 dark:text-white mb-2">
+                    Amount
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min="0.0000001"
+                      step="0.1"
+                      placeholder="0.00"
+                      value={amount}
+                      onChange={(e: ChangeEvent<HTMLInputElement>) => setAmount(e.target.value)}
+                      disabled={status === "signing"}
+                      className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 pr-16 text-lg font-semibold text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                    />
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-lg font-semibold text-gray-500 dark:text-gray-400">
+                      {selectedToken}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Token Selector */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 dark:text-white mb-2">
+                    Token
+                  </label>
+                  <select
+                    value={selectedToken}
+                    onChange={(e) => setSelectedToken(e.target.value)}
+                    disabled={status === "signing"}
+                    className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                  >
+                    <option value="XLM">XLM (Stellar Lumens)</option>
+                    <option value="USDC">USDC (USD Coin)</option>
+                  </select>
+                </div>
+
+                {/* Fee Preview */}
+                <div className="rounded-lg bg-gray-50 dark:bg-gray-800 p-4 space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600 dark:text-gray-400">Amount</span>
+                    <span className="font-medium text-gray-900 dark:text-white">{amount || "0"} {selectedToken}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600 dark:text-gray-400">Network Fee</span>
+                    <span className="font-medium text-gray-900 dark:text-white">{calculateFee().toFixed(7)} {selectedToken}</span>
+                  </div>
+                  <div className="h-px bg-gray-200 dark:bg-gray-700" />
+                  <div className="flex justify-between text-sm font-semibold">
+                    <span className="text-gray-900 dark:text-white">Total</span>
+                    <span className="text-blue-600 dark:text-blue-400">{total} {selectedToken}</span>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Signing State */}
+            {status === "signing" && (
+              <div className="flex flex-col items-center gap-3 py-8 text-center">
+                <div className="relative w-12 h-12">
+                  <div className="absolute inset-0 rounded-full bg-blue-100 dark:bg-blue-950 animate-pulse" />
+                  <Loader2 size={32} className="absolute inset-0 m-auto animate-spin text-blue-600 dark:text-blue-400" />
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-900 dark:text-white">Waiting for signature</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    Please confirm in your Freighter wallet
+                  </p>
                 </div>
               </div>
             )}
 
-            {/* Pending */}
+            {/* Pending State */}
             {status === "pending" && (
-              <div className="flex flex-col items-center gap-3 py-4 text-center">
-                <Loader2 size={32} className="animate-spin text-blue-500" />
-                <p className="text-sm text-gray-600">
-                  Waiting for wallet confirmation…
-                </p>
+              <div className="flex flex-col items-center gap-3 py-8 text-center">
+                <div className="relative w-12 h-12">
+                  <div className="absolute inset-0 rounded-full bg-blue-100 dark:bg-blue-950 animate-pulse" />
+                  <Loader2 size={32} className="absolute inset-0 m-auto animate-spin text-blue-600 dark:text-blue-400" />
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-900 dark:text-white">Processing transaction</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    Broadcasting to Stellar network…
+                  </p>
+                </div>
               </div>
             )}
 
-            {/* Success */}
+            {/* Success State */}
             {status === "success" && txHash && (
-              <div className="flex flex-col items-center gap-3 py-4 text-center">
-                <CheckCircle2 size={32} className="text-green-500" />
-                <p className="text-sm font-medium text-gray-800">Tip sent successfully!</p>
+              <div className="flex flex-col items-center gap-4 py-8 text-center">
+                <div className="relative w-16 h-16">
+                  <div className="absolute inset-0 rounded-full bg-green-100 dark:bg-green-950" />
+                  <CheckCircle2 size={40} className="absolute inset-0 m-auto text-green-600 dark:text-green-400" />
+                </div>
+                <div>
+                  <p className="font-bold text-lg text-gray-900 dark:text-white">Tip sent successfully!</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    {workerName} has received your tip
+                  </p>
+                </div>
                 <a
                   href={`${EXPLORER_BASE}/${txHash}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 rounded-md bg-green-50 px-3 py-1.5 text-xs font-medium text-green-700 hover:bg-green-100 transition-colors"
+                  className="inline-flex items-center gap-2 rounded-lg bg-green-50 dark:bg-green-950/30 px-4 py-2 text-sm font-medium text-green-700 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-950/50 transition-colors border border-green-200 dark:border-green-900"
                 >
                   View on Stellar Expert
-                  <ExternalLink size={12} />
+                  <ExternalLink size={14} />
                 </a>
-                <p className="font-mono text-xs text-gray-400 break-all">{txHash}</p>
+                <p className="font-mono text-xs text-gray-400 dark:text-gray-500 break-all max-w-xs">
+                  {txHash}
+                </p>
               </div>
             )}
 
-            {/* Error */}
+            {/* Error State */}
             {status === "error" && (
-              <div className="flex flex-col items-center gap-3 py-4 text-center">
-                <AlertCircle size={32} className="text-red-500" />
-                {freighterMissing ? (
+              <div className="flex flex-col items-center gap-4 py-8 text-center">
+                <div className="relative w-16 h-16">
+                  <div className="absolute inset-0 rounded-full bg-red-100 dark:bg-red-950" />
+                  <AlertCircle size={40} className="absolute inset-0 m-auto text-red-600 dark:text-red-400" />
+                </div>
+
+                {errorType === "freighter_missing" ? (
                   <>
-                    <p className="text-sm font-medium text-gray-800">Freighter not installed</p>
-                    <p className="text-xs text-gray-500">
-                      You need the Freighter browser extension to send tips.
-                    </p>
+                    <div>
+                      <p className="font-bold text-lg text-gray-900 dark:text-white">Freighter not found</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        Install the Freighter browser extension to send tips
+                      </p>
+                    </div>
                     <a
                       href="https://www.freighter.app"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+                      className="inline-flex items-center gap-2 rounded-lg bg-blue-600 dark:bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 dark:hover:bg-blue-800 transition-colors"
                     >
                       Download Freighter
-                      <ExternalLink size={13} />
+                      <ExternalLink size={14} />
                     </a>
+                  </>
+                ) : errorType === "insufficient_balance" ? (
+                  <>
+                    <div>
+                      <p className="font-bold text-lg text-gray-900 dark:text-white">Insufficient balance</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        You don't have enough {selectedToken} to send this tip
+                      </p>
+                    </div>
+                    <button
+                      onClick={reset}
+                      className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline"
+                    >
+                      Try a different amount
+                    </button>
                   </>
                 ) : (
                   <>
-                    <p className="text-sm font-medium text-gray-800">Transaction failed</p>
-                    {errorMsg && (
-                      <p className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-600 break-all">
-                        {errorMsg}
-                      </p>
-                    )}
+                    <div>
+                      <p className="font-bold text-lg text-gray-900 dark:text-white">Transaction failed</p>
+                      {errorMsg && (
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-2 bg-red-50 dark:bg-red-950/30 rounded-lg p-3 border border-red-200 dark:border-red-900">
+                          {errorMsg}
+                        </p>
+                      )}
+                    </div>
                     <button
                       onClick={reset}
-                      className="text-sm text-blue-600 hover:underline"
+                      className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline"
                     >
                       Try again
                     </button>
@@ -266,30 +354,38 @@ export default function TipModal({ workerName, walletAddress, trigger }: Props) 
             )}
           </div>
 
-          {/* Footer actions */}
-          {status === "idle" && (
+          {/* Footer Actions */}
+          {(status === "idle" || status === "signing") && (
             <div className="mt-6 flex gap-3">
-              <Dialog.Close className="flex-1 rounded-lg border py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
+              <Dialog.Close className="flex-1 rounded-lg border border-gray-300 dark:border-gray-700 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
                 Cancel
               </Dialog.Close>
               <button
                 onClick={sendTip}
-                disabled={!amount || Number(amount) <= 0 || isLoading}
+                disabled={!amount || Number(amount) <= 0 || status === "signing"}
                 className={cn(
-                  "flex-1 rounded-lg py-2.5 text-sm font-medium text-white transition-colors",
-                  !amount || Number(amount) <= 0
-                    ? "bg-blue-300 cursor-not-allowed"
-                    : "bg-blue-600 hover:bg-blue-700"
+                  "flex-1 rounded-lg py-2.5 text-sm font-semibold transition-colors",
+                  !amount || Number(amount) <= 0 || status === "signing"
+                    ? "bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed"
+                    : "bg-blue-600 dark:bg-blue-700 text-white hover:bg-blue-700 dark:hover:bg-blue-800"
                 )}
               >
-                Send Tip
+                {status === "signing" ? "Signing…" : "Send Tip"}
               </button>
             </div>
           )}
 
           {status === "success" && (
             <div className="mt-6">
-              <Dialog.Close className="w-full rounded-lg bg-gray-100 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-200 transition-colors">
+              <Dialog.Close className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                Close
+              </Dialog.Close>
+            </div>
+          )}
+
+          {status === "error" && (
+            <div className="mt-6">
+              <Dialog.Close className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
                 Close
               </Dialog.Close>
             </div>
@@ -300,17 +396,13 @@ export default function TipModal({ workerName, walletAddress, trigger }: Props) 
   );
 }
 
-// ─── Stellar transaction helpers ────────────────────────────────────────────
-// These build the XDR for the Market contract's `tip` function call.
-// We use the Stellar base library via dynamic import to keep bundle size down.
-
 async function buildTipTxXdr(
   from: string,
   to: string,
   amountStroops: bigint
 ): Promise<string> {
   const StellarSdk = await import("@stellar/stellar-sdk");
-  const { Keypair: _Keypair, TransactionBuilder, Networks: _Networks, Operation, Asset, BASE_FEE } = StellarSdk;
+  const { TransactionBuilder, Operation, Asset, BASE_FEE } = StellarSdk;
 
   const server = new StellarSdk.Horizon.Server(HORIZON_URL);
   const account = await server.loadAccount(from);
@@ -338,7 +430,5 @@ async function assembleTipTx(
   amountStroops: bigint,
   _simulationResult: unknown
 ): Promise<string> {
-  // For a native XLM payment (non-Soroban path), the "assembled" tx is the same.
-  // If MARKET_CONTRACT_ID is set, this would use SorobanRpc.assembleTransaction.
   return buildTipTxXdr(from, to, amountStroops);
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { ExternalLink, ChevronLeft, ChevronRight } from "lucide-react";
+import EmptyState from "./EmptyState";
 
 const HORIZON = "https://horizon-testnet.stellar.org";
 const PAGE_SIZE = 10;
@@ -92,7 +93,7 @@ export default function TransactionHistory({
       )}
 
       {!loading && !error && payments.length === 0 && (
-        <p className="text-sm text-gray-400 italic">No transactions yet.</p>
+        <EmptyState variant="no-transactions" ctaHref="/workers" />
       )}
 
       {!loading && !error && payments.length > 0 && (

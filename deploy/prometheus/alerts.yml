@@ -55,3 +55,30 @@ groups:
         annotations:
           summary: 'Low disk space'
           description: 'Disk space is below 10%'
+
+      - alert: TLSCertificateExpiringSoon
+        expr: certmanager_certificate_expiration_timestamp_seconds - time() < 14 * 24 * 3600
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: 'TLS certificate expiring within 14 days'
+          description: 'Certificate {{ $labels.name }} in namespace {{ $labels.namespace }} expires in less than 14 days'
+
+      - alert: TLSCertificateExpiryCritical
+        expr: certmanager_certificate_expiration_timestamp_seconds - time() < 3 * 24 * 3600
+        for: 30m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'TLS certificate expiring within 3 days'
+          description: 'Certificate {{ $labels.name }} in namespace {{ $labels.namespace }} expires in less than 3 days'
+
+      - alert: TLSCertificateNotReady
+        expr: certmanager_certificate_ready_status{condition="True"} == 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'TLS certificate not ready'
+          description: 'Certificate {{ $labels.name }} in namespace {{ $labels.namespace }} is not in Ready state'

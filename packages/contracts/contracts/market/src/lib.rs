@@ -40,6 +40,38 @@ pub const ROLE_DISPUTE_MGR: &str = "dispute_mgr";
 pub const ROLE_UPGRADER: &str = "upgrader";
 
 // =============================================================================
+// Gas Optimization Constants for Roles
+// =============================================================================
+
+/// Role IDs for storage key optimization.
+/// Maps role strings to compact u64 IDs for efficient storage.
+const ROLE_ADMIN_ID: u64 = 0;
+const ROLE_PAUSER_ID: u64 = 1;
+const ROLE_FEE_MANAGER_ID: u64 = 2;
+const ROLE_DISPUTE_MGR_ID: u64 = 3;
+const ROLE_UPGRADER_ID: u64 = 4;
+
+/// Convert a role symbol to its compact u64 ID for storage optimization.
+fn role_to_id(role: &Symbol) -> u64 {
+    match role.as_string().as_str() {
+        ROLE_ADMIN => ROLE_ADMIN_ID,
+        ROLE_PAUSER => ROLE_PAUSER_ID,
+        ROLE_FEE_MANAGER => ROLE_FEE_MANAGER_ID,
+        ROLE_DISPUTE_MGR => ROLE_DISPUTE_MGR_ID,
+        ROLE_UPGRADER => ROLE_UPGRADER_ID,
+        _ => {
+            // Fallback for unknown roles - create a hash-based ID
+            // This ensures forward compatibility while maintaining optimization for known roles
+            let hash = env.crypto().sha256(role.as_string().as_bytes());
+            // Take first 8 bytes and convert to u64
+            let mut id_bytes = [0u8; 8];
+            id_bytes.copy_from_slice(&hash[0..8]);
+            u64::from_le_bytes(id_bytes)
+        }
+    }
+}
+
+// =============================================================================
 // Types
 // =============================================================================
 
@@ -47,8 +79,6 @@ pub const ROLE_UPGRADER: &str = "upgrader";
 #[contracttype]
 #[derive(Clone)]
 pub struct Config {
-    /// The admin address — can update fees and upgrade the contract.
-    pub admin: Address,
     /// Protocol fee in basis points (e.g. 100 = 1%). Capped at [`MAX_FEE_BPS`].
     pub fee_bps: u32,
     /// Address that receives collected protocol fees.
@@ -129,8 +159,10 @@ pub enum DataKey {
     Config,
     /// Instance storage — paused flag; when `true` all state-mutating functions revert.
     Paused,
-    /// Persistent storage — `Vec<Address>` of members for a given role [`Symbol`].
-    RoleMembers(Symbol),
+    /// Persistent storage — admin address.
+    Admin,
+    /// Persistent storage — `Vec<Address>` of members for a given role.
+    RoleMembers(u64),
     /// Persistent storage — [`Escrow`] struct keyed by a caller-supplied id [`Symbol`].
     Escrow(Symbol),
     /// Persistent storage — [`MultiSigEscrow`] keyed by a caller-supplied id [`Symbol`].
@@ -139,6 +171,8 @@ pub enum DataKey {
     Arbitration(Symbol),
     /// Persistent storage — list of approved arbitrator addresses.
     Arbitrators,
+    /// Persistent storage — current storage schema version (u32), used by [`migrate`].
+    SchemaVersion,
 }
 
 // =============================================================================
@@ -172,13 +206,18 @@ impl MarketContract {
             "Already initialized"
         );
         assert!(fee_bps <= MAX_FEE_BPS, "fee_bps exceeds maximum (500)");
-        let config = Config { admin: admin.clone(), fee_bps, fee_recipient };
+        // Store admin in persistent storage
+        env.storage().persistent().set(&DataKey::Admin, &admin);
+        // Set initial schema version
+        env.storage().persistent().set(&DataKey::SchemaVersion, &1u32);
+        // Store config in instance storage
+        let config = Config { fee_bps, fee_recipient };
         env.storage().instance().set(&DataKey::Config, &config);
         // Bootstrap: grant ROLE_ADMIN to the initial admin.
         let role = Symbol::new(&env, ROLE_ADMIN);
         let mut members: Vec<Address> = Vec::new(&env);
         members.push_back(admin.clone());
-        env.storage().persistent().set(&DataKey::RoleMembers(role.clone()), &members);
+        env.storage().persistent().set(&DataKey::RoleMembers(role_to_id(&role)), &members);
         env.events().publish((symbol_short!("RlGrnt"), role, admin), ());
     }
 
@@ -189,14 +228,14 @@ impl MarketContract {
     /// Update the protocol fee (admin only, capped at [`MAX_FEE_BPS`]).
     ///
     /// # Parameters
-    /// - `admin`: Must be the contract admin; `require_auth()` is enforced.
     /// - `new_fee_bps`: New fee in basis points (0–500).
     ///
     /// # Panics
     /// - `"fee_bps exceeds maximum (500)"` if `new_fee_bps > MAX_FEE_BPS`.
-    /// - `"Unauthorized"` if `admin` does not match the stored admin.
+    /// - `"Unauthorized"` if caller does not match the stored admin.
     /// - `"Not initialized"` if [`initialize`] has not been called.
-    pub fn update_fee(env: Env, admin: Address, new_fee_bps: u32) {
+    pub fn update_fee(env: Env, new_fee_bps: u32) {
+        let admin = Self::get_admin(env);
         Self::require_role(&env, &Symbol::new(&env, ROLE_FEE_MANAGER), &admin);
         assert!(new_fee_bps <= MAX_FEE_BPS, "fee_bps exceeds maximum (500)");
         let mut config: Config = env
@@ -208,17 +247,38 @@ impl MarketContract {
         env.storage().instance().set(&DataKey::Config, &config);
     }
 
+    /// Update the treasury (fee recipient) address. Caller must hold [`ROLE_ADMIN`].
+    ///
+    /// # Parameters
+    /// - `caller`: Must hold `ROLE_ADMIN`; `require_auth()` is enforced.
+    /// - `new_treasury`: New address that will receive collected protocol fees.
+    ///
+    /// # Panics
+    /// - `"Missing role"` if `caller` does not hold `ROLE_ADMIN`.
+    /// - `"Not initialized"` if [`initialize`] has not been called.
+    pub fn set_treasury(env: Env, caller: Address, new_treasury: Address) {
+        Self::require_role(&env, &Symbol::new(&env, ROLE_ADMIN), &caller);
+        let mut config: Config = env
+            .storage()
+            .instance()
+            .get(&DataKey::Config)
+            .expect("Not initialized");
+        config.fee_recipient = new_treasury.clone();
+        env.storage().instance().set(&DataKey::Config, &config);
+        env.events().publish((symbol_short!("TrsSet"), caller), new_treasury);
+    }
+
     // -------------------------------------------------------------------------
     // Internal RBAC helpers
     // -------------------------------------------------------------------------
 
-    /// Return the member list for a role, or empty vec if no members exist.
-    fn get_role_members(env: &Env, role: &Symbol) -> Vec<Address> {
-        env.storage()
-            .persistent()
-            .get(&DataKey::RoleMembers(role.clone()))
-            .unwrap_or(Vec::new(env))
-    }
+/// Return the member list for a role, or empty vec if no members exist.
+fn get_role_members(env: &Env, role: &Symbol) -> Vec<Address> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::RoleMembers(role_to_id(role)))
+        .unwrap_or(Vec::new(env))
+}
 
     /// Assert that `caller` holds `role` and has authorised this call.
     ///
@@ -257,7 +317,7 @@ impl MarketContract {
         let mut members = Self::get_role_members(&env, &role);
         if members.iter().all(|m| m != account) {
             members.push_back(account.clone());
-            env.storage().persistent().set(&DataKey::RoleMembers(role.clone()), &members);
+            env.storage().persistent().set(&DataKey::RoleMembers(role_to_id(&role)), &members);
         }
 
         env.events().publish((symbol_short!("RlGrnt"), role, account), ());
@@ -293,7 +353,7 @@ impl MarketContract {
             }
         }
         assert!(found, "Account does not hold role");
-        env.storage().persistent().set(&DataKey::RoleMembers(role.clone()), &updated);
+        env.storage().persistent().set(&DataKey::RoleMembers(role_to_id(&role)), &updated);
 
         env.events().publish((symbol_short!("RlRvkd"), role, account), ());
     }
@@ -331,14 +391,32 @@ impl MarketContract {
     /// - `admin`: Must hold [`ROLE_PAUSER`]; `require_auth()` is enforced.
     ///
     /// # Panics
-    /// - `"Missing role"` if `admin` does not hold `ROLE_PAUSER`.
+    /// Panics with `"Missing role"` if `admin` does not hold `ROLE_PAUSER`.
     ///
     /// # Events
     /// Emits `("Paused", admin)`.
     pub fn pause(env: Env, admin: Address) {
-        Self::require_role(&env, &Symbol::new(&env, ROLE_PAUSER), &admin);
+        let pauser_role = Self::role_symbol(&env, ROLE_PAUSER);
+        Self::require_role(&env, &pauser_role, &admin);
         env.storage().instance().set(&DataKey::Paused, &true);
         env.events().publish((symbol_short!("Paused"), admin), ());
+    }
+
+    /// Unpause the contract, re-enabling all state-mutating operations.
+    ///
+    /// # Parameters
+    /// - `admin`: Must hold [`ROLE_PAUSER`]; `require_auth()` is enforced.
+    ///
+    /// # Panics
+    /// Panics with `"Missing role"` if `admin` does not hold `ROLE_PAUSER`.
+    ///
+    /// # Events
+    /// Emits `("Unpaused", admin)`.
+    pub fn unpause(env: Env, admin: Address) {
+        let pauser_role = Self::role_symbol(&env, ROLE_PAUSER);
+        Self::require_role(&env, &pauser_role, &admin);
+        env.storage().instance().set(&DataKey::Paused, &false);
+        env.events().publish((symbol_short!("Unpaused"), admin), ());
     }
 
     /// Unpause the contract, re-enabling all state-mutating operations.
@@ -363,6 +441,42 @@ impl MarketContract {
             .instance()
             .get(&DataKey::Paused)
             .unwrap_or(false)
+    }
+
+    /// Get the admin address.
+    ///
+    /// # Panics
+    /// Panics with `"Not initialized"` if [`initialize`] has not been called.
+    pub fn get_admin(env: Env) -> Address {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Admin)
+            .expect("Not initialized")
+    }
+
+    /// Set a new admin address. Caller must be the current admin.
+    ///
+    /// # Parameters
+    /// - `new_admin`: The address that will become the new admin.
+    ///
+    /// # Panics
+    /// - `"Not initialized"` if [`initialize`] has not been called.
+    /// - `"Unauthorized"` if caller does not match the stored admin.
+    pub fn set_admin(env: Env, new_admin: Address) {
+        let current_admin = Self::get_admin(env);
+        current_admin.require_auth(); // Require auth from current admin
+        
+        // Update admin in persistent storage
+        env.storage().persistent().set(&DataKey::Admin, &new_admin);
+        
+        // Update role membership: remove old admin from ADMIN role, add new admin
+        let admin_role = Self::role_symbol(&env, ROLE_ADMIN);
+        let mut members = Self::get_role_members(&env, &admin_role);
+        members.retain(|m| m != &current_admin); // Remove old admin
+        if !members.iter().any(|m| m == &new_admin) {
+            members.push_back(new_admin.clone()); // Add new admin if not already present
+        }
+        env.storage().persistent().set(&DataKey::RoleMembers(role_to_id(&admin_role)), &members);
     }
 
     // -------------------------------------------------------------------------
@@ -399,12 +513,19 @@ impl MarketContract {
 
         let client = token::Client::new(&env, &token_addr);
 
-        let fee: i128 = (amount * config.fee_bps as i128) / 10_000;
-        let worker_amount = amount - fee;
+        let fee: i128 = amount
+            .checked_mul(config.fee_bps as i128)
+            .and_then(|v| v.checked_div(10_000))
+            .expect("Fee overflow");
+        let worker_amount = amount.checked_sub(fee).expect("Fee underflow");
 
         client.transfer(&from, &to, &worker_amount);
         if fee > 0 {
             client.transfer(&from, &config.fee_recipient, &fee);
+            env.events().publish(
+                (symbol_short!("FeeTaken"),),
+                (fee, config.fee_recipient),
+            );
         }
 
         env.events().publish(
@@ -576,6 +697,51 @@ impl MarketContract {
         env.storage().persistent().get(&DataKey::Escrow(id))
     }
 
+    /// Return the current contract configuration.
+    pub fn get_config(env: Env) -> Config {
+        env.storage()
+            .instance()
+            .get(&DataKey::Config)
+            .expect("Not initialized")
+    }
+
+    /// Cancel an escrow that has passed its expiry. Callable by anyone.
+    ///
+    /// Refunds the full amount to `from` with no fee.
+    ///
+    /// # Parameters
+    /// - `id`: The escrow identifier.
+    ///
+    /// # Panics
+    /// - `"Escrow not found"` if no escrow exists with the given `id`.
+    /// - `"Escrow not active"` if already released or cancelled.
+    /// - `"Escrow not yet expired"` if current timestamp < expiry.
+    ///
+    /// # Events
+    /// Emits `("EscExp", id, escrow.from)` with data `escrow.amount`.
+    pub fn cancel_expired_escrow(env: Env, id: Symbol) {
+        Self::require_not_paused(&env);
+        let mut escrow: Escrow = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Escrow(id.clone()))
+            .expect("Escrow not found");
+
+        assert!(!escrow.released && !escrow.cancelled, "Escrow not active");
+        assert!(env.ledger().timestamp() >= escrow.expiry, "Escrow not yet expired");
+
+        let client = token::Client::new(&env, &escrow.token);
+        client.transfer(&env.current_contract_address(), &escrow.from, &escrow.amount);
+
+        escrow.cancelled = true;
+        env.storage().persistent().set(&DataKey::Escrow(id.clone()), &escrow);
+
+        env.events().publish(
+            (symbol_short!("EscExp"), id, escrow.from),
+            escrow.amount,
+        );
+    }
+
     // -------------------------------------------------------------------------
     // Multi-sig escrow (#337)
     // -------------------------------------------------------------------------
@@ -744,8 +910,16 @@ impl MarketContract {
     // -------------------------------------------------------------------------
 
     /// Add an arbitrator address (admin only).
-    pub fn add_arbitrator(env: Env, admin: Address, arbitrator: Address) {
-        Self::require_role(&env, &Symbol::new(&env, ROLE_ADMIN), &admin);
+    ///
+    /// # Parameters
+    /// - `arbitrator`: Address to add as arbitrator.
+    ///
+    /// # Panics
+    /// - `"Not initialized"` if [`initialize`] has not been called.
+    /// - `"Unauthorized"` if caller does not match the stored admin.
+    pub fn add_arbitrator(env: Env, arbitrator: Address) {
+        let admin = Self::get_admin(env);
+        admin.require_auth();
         let mut arbitrators: Vec<Address> = env
             .storage()
             .persistent()
@@ -759,8 +933,16 @@ impl MarketContract {
     }
 
     /// Remove an arbitrator address (admin only).
-    pub fn remove_arbitrator(env: Env, admin: Address, arbitrator: Address) {
-        Self::require_role(&env, &Symbol::new(&env, ROLE_ADMIN), &admin);
+    ///
+    /// # Parameters
+    /// - `arbitrator`: Address to remove as arbitrator.
+    ///
+    /// # Panics
+    /// - `"Not initialized"` if [`initialize`] has not been called.
+    /// - `"Unauthorized"` if caller does not match the stored admin.
+    pub fn remove_arbitrator(env: Env, arbitrator: Address) {
+        let admin = Self::get_admin(env);
+        admin.require_auth();
         let arbitrators: Vec<Address> = env
             .storage()
             .persistent()
@@ -768,8 +950,8 @@ impl MarketContract {
             .unwrap_or(Vec::new(&env));
         let mut updated: Vec<Address> = Vec::new(&env);
         for a in arbitrators.iter() {
-            if a != arbitrator {
-                updated.push_back(a);
+            if a != &arbitrator {
+                updated.push_back(a.clone());
             }
         }
         env.storage().persistent().set(&DataKey::Arbitrators, &updated);
@@ -876,14 +1058,77 @@ impl MarketContract {
     /// Upgrade the contract WASM in-place, preserving the contract ID and all storage.
     ///
     /// # Parameters
-    /// - `admin`: Must be the contract admin; `require_auth()` is enforced.
+    /// - `new_wasm_hash`: The hash returned by `stellar contract install` for the new WASM.
+    ///
+    // -------------------------------------------------------------------------
+    // Schema migration (#535)
+    // -------------------------------------------------------------------------
+
+    /// Return the current storage schema version.
+    pub fn get_schema_version(env: Env) -> u32 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::SchemaVersion)
+            .unwrap_or(1u32)
+    }
+
+    /// Run version-specific storage migration logic.
+    ///
+    /// Guards:
+    /// - Caller must hold `ROLE_ADMIN`.
+    /// - `expected_version` must equal the current schema version (prevents double-run
+    ///   and out-of-order migrations).
+    /// - After success the version is bumped to `expected_version + 1`.
+    ///
+    /// # Panics
+    /// - `"Missing role"` if `admin` does not hold `ROLE_ADMIN`.
+    /// - `"Wrong schema version"` if current version ≠ `expected_version`.
+    ///
+    /// # Events
+    /// Emits `("Migrated",)` with data `(expected_version, expected_version + 1)`.
+    pub fn migrate(env: Env, admin: Address, expected_version: u32) {
+        Self::require_role(&env, &Symbol::new(&env, ROLE_ADMIN), &admin);
+
+        let current: u32 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::SchemaVersion)
+            .unwrap_or(1u32);
+
+        assert!(current == expected_version, "Wrong schema version");
+
+        // ---- version-specific migration logic --------------------------------
+        if expected_version == 1 {
+            // Example: no structural change needed for v1→v2 in this release.
+        }
+        // ----------------------------------------------------------------------
+
+        let new_version = expected_version.checked_add(1).expect("Version overflow");
+        env.storage().persistent().set(&DataKey::SchemaVersion, &new_version);
+
+        env.events().publish(
+            (symbol_short!("Migrated"),),
+            (expected_version, new_version),
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // Upgrade
+    // -------------------------------------------------------------------------
+
+    /// Upgrade the contract WASM in-place, preserving the contract ID and all storage.
+    ///
+    /// # Parameters
     /// - `new_wasm_hash`: The hash returned by `stellar contract install` for the new WASM.
     ///
     /// # Panics
     /// - `"Not initialized"` if [`initialize`] has not been called.
-    /// - `"Unauthorized"` if `admin` does not match the stored admin.
-    pub fn upgrade(env: Env, admin: Address, new_wasm_hash: soroban_sdk::BytesN<32>) {
-        Self::require_role(&env, &Symbol::new(&env, ROLE_UPGRADER), &admin);
+    /// - `"Unauthorized"` if caller does not match the stored admin.
+    pub fn upgrade(env: Env, new_wasm_hash: soroban_sdk::BytesN<32>) {
+        let admin = Self::get_admin(env);
+        admin.require_auth();
+        let upgrader_role = Self::role_symbol(&env, ROLE_UPGRADER);
+        Self::require_role(&env, &upgrader_role, &admin);
         env.deployer().update_current_contract_wasm(new_wasm_hash);
     }
 }
@@ -968,6 +1213,103 @@ mod tests {
         t.client().tip(&t.payer, &t.worker, &t.token_addr, &500_000);
         assert_eq!(t.token_balance(&t.worker), 500_000);
         assert_eq!(t.token_balance(&t.payer), 500_000);
+    }
+
+    // -------------------------------------------------------------------------
+    // Fee mechanism tests (#532)
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_tip_with_fee_deducts_correctly() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let admin = Address::generate(&env);
+        let payer = Address::generate(&env);
+        let worker = Address::generate(&env);
+        let treasury = Address::generate(&env);
+
+        let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+        let token_addr = token_id.address();
+        StellarAssetClient::new(&env, &token_addr).mint(&payer, &1_000_000);
+
+        let contract_id = env.register_contract(None, MarketContract);
+        // Initialize with 100 bps (1%) fee, treasury as recipient
+        MarketContractClient::new(&env, &contract_id).initialize(&admin, &100, &treasury);
+
+        let client = MarketContractClient::new(&env, &contract_id);
+        client.tip(&payer, &worker, &token_addr, &100_000);
+
+        // fee = 100_000 * 100 / 10_000 = 1_000
+        let token = TokenClient::new(&env, &token_addr);
+        assert_eq!(token.balance(&worker), 99_000);
+        assert_eq!(token.balance(&treasury), 1_000);
+        assert_eq!(token.balance(&payer), 900_000);
+    }
+
+    #[test]
+    fn test_tip_zero_fee_sends_full_amount() {
+        let t = TestEnv::new(); // initialized with fee_bps = 0
+        let treasury_before = t.token_balance(&t.admin); // admin is fee_recipient in TestEnv
+        t.client().tip(&t.payer, &t.worker, &t.token_addr, &200_000);
+        // No fee deducted — worker gets full amount
+        assert_eq!(t.token_balance(&t.worker), 200_000);
+        assert_eq!(t.token_balance(&t.payer), 800_000);
+        // Treasury balance unchanged
+        assert_eq!(t.token_balance(&t.admin), treasury_before);
+    }
+
+    #[test]
+    fn test_set_treasury_updates_fee_recipient() {
+        let t = TestEnv::new();
+        let new_treasury = Address::generate(&t.env);
+
+        // Update treasury (admin holds ROLE_ADMIN)
+        t.client().set_treasury(&t.admin, &new_treasury);
+
+        // Verify config reflects new treasury
+        let config = t.client().get_config();
+        assert_eq!(config.fee_recipient, new_treasury);
+    }
+
+    #[test]
+    #[should_panic(expected = "Missing role")]
+    fn test_set_treasury_non_admin_panics() {
+        let t = TestEnv::new();
+        let stranger = Address::generate(&t.env);
+        let new_treasury = Address::generate(&t.env);
+        t.client().set_treasury(&stranger, &new_treasury);
+    }
+
+    #[test]
+    fn test_tip_fee_goes_to_updated_treasury() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let admin = Address::generate(&env);
+        let payer = Address::generate(&env);
+        let worker = Address::generate(&env);
+        let old_treasury = Address::generate(&env);
+        let new_treasury = Address::generate(&env);
+
+        let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+        let token_addr = token_id.address();
+        StellarAssetClient::new(&env, &token_addr).mint(&payer, &1_000_000);
+
+        let contract_id = env.register_contract(None, MarketContract);
+        MarketContractClient::new(&env, &contract_id).initialize(&admin, &200, &old_treasury);
+
+        let client = MarketContractClient::new(&env, &contract_id);
+        // Update treasury to new_treasury
+        client.set_treasury(&admin, &new_treasury);
+
+        client.tip(&payer, &worker, &token_addr, &100_000);
+
+        // fee = 100_000 * 200 / 10_000 = 2_000
+        let token = TokenClient::new(&env, &token_addr);
+        assert_eq!(token.balance(&new_treasury), 2_000);
+        assert_eq!(token.balance(&old_treasury), 0);
+        assert_eq!(token.balance(&worker), 98_000);
     }
 
     #[test]
@@ -1191,12 +1533,204 @@ mod tests {
         let s1 = Address::generate(&t.env);
         let signers = soroban_sdk::vec![&t.env, s1.clone()];
 
-        t.set_time(1000);
-        t.client().create_multisig_escrow(&id, &t.payer, &t.worker, &t.token_addr, &100_000, &2000, &signers, &1);
-        t.set_time(3000);
-        t.client().cancel_multisig_escrow(&id, &t.payer);
+         t.set_time(1000);
+         t.client().create_multisig_escrow(&id, &t.payer, &t.worker, &t.token_addr, &100_000, &2000, &signers, &1);
+         t.set_time(3000);
+         t.client().cancel_multisig_escrow(&id, &t.payer);
 
-        assert_eq!(t.token_balance(&t.payer), 1_000_000);
-        assert!(t.client().get_multisig_escrow(&id).unwrap().cancelled);
+         assert_eq!(t.token_balance(&t.payer), 1_000_000);
+         assert!(t.client().get_multisig_escrow(&id).unwrap().cancelled);
+     }
+
+    // -------------------------------------------------------------------------
+    // Migration tests (#535)
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_initial_schema_version_is_1() {
+        let t = TestEnv::new();
+        assert_eq!(t.client().get_schema_version(), 1u32);
     }
-}
+
+    #[test]
+    fn test_migrate_v1_to_v2_bumps_version() {
+        let t = TestEnv::new();
+        t.client().migrate(&t.admin, &1u32);
+        assert_eq!(t.client().get_schema_version(), 2u32);
+    }
+
+    #[test]
+    #[should_panic(expected = "Wrong schema version")]
+    fn test_migrate_double_run_panics() {
+        let t = TestEnv::new();
+        t.client().migrate(&t.admin, &1u32);
+        t.client().migrate(&t.admin, &1u32);
+    }
+
+    #[test]
+    #[should_panic(expected = "Wrong schema version")]
+    fn test_migrate_wrong_version_panics() {
+        let t = TestEnv::new();
+        t.client().migrate(&t.admin, &2u32);
+    }
+
+    #[test]
+    #[should_panic(expected = "Missing role")]
+    fn test_migrate_non_admin_panics() {
+        let t = TestEnv::new();
+        let stranger = Address::generate(&t.env);
+        t.client().migrate(&stranger, &1u32);
+    }
+
+    #[test]
+    fn test_migrate_sequential_versions() {
+        let t = TestEnv::new();
+        t.client().migrate(&t.admin, &1u32);
+        assert_eq!(t.client().get_schema_version(), 2u32);
+        t.client().migrate(&t.admin, &2u32);
+        assert_eq!(t.client().get_schema_version(), 3u32);
+    }
+ }
+
+ // ---------------------------------------------------------------------------
+ // Admin access control tests
+ // ---------------------------------------------------------------------------
+
+ #[test]
+ fn test_initialize_sets_admin() {
+     let env = Env::default();
+     env.mock_all_auths();
+     let contract_address = env.register(MarketContract, ());
+     let client = MarketContractClient::new(&env, &contract_address);
+     
+     let admin = Address::generate(&env);
+     let fee_recipient = Address::generate(&env);
+     
+     client.initialize(&admin, &100, &fee_recipient);
+     
+     // Check that get_admin returns the correct admin
+     assert_eq!(client.get_admin(), admin);
+ }
+
+ #[test]
+ fn test_get_admin_uninitialized_panics() {
+     let env = Env::default();
+     env.mock_all_auths();
+     let contract_address = env.register(MarketContract, ());
+     let client = MarketContractClient::new(&env, &contract_address);
+     
+     // Should panic when trying to get admin before initialization
+     assert_panic_with_msg!(
+         &move || { client.get_admin(); },
+         "Not initialized"
+     );
+ }
+
+ #[test]
+ fn test_set_admin_success() {
+     let env = Env::default();
+     env.mock_all_auths();
+     let contract_address = env.register(MarketContract, ());
+     let mut client = MarketContractClient::new(&env, &contract_address);
+     
+     let admin_old = Address::generate(&env);
+     let admin_new = Address::generate(&env);
+     let fee_recipient = Address::generate(&env);
+     
+     // Initialize with old admin
+     client.initialize(&admin_old, &100, &fee_recipient);
+     
+     // Verify initial admin
+     assert_eq!(client.get_admin(), admin_old);
+     
+     // Change admin (requires old admin auth)
+     client.set_admin(&admin_new);
+     
+     // Verify new admin
+     assert_eq!(client.get_admin(), admin_new);
+ }
+
+ #[test]
+ #[should_panic(expected = "Unauthorized")]
+ fn test_set_admin_unauthorized_fails() {
+     let env = Env::default();
+     // Not mocking auths to test unauthorized access
+     let contract_address = env.register(MarketContract, ());
+     let client = MarketContractClient::new(&env, &contract_address);
+     
+     let admin_old = Address::generate(&env);
+     let admin_new = Address::generate(&env);
+     let fee_recipient = Address::generate(&env);
+     
+     // Initialize with old admin
+     client.initialize(&admin_old, &100, &fee_recipient);
+     
+     // Try to change admin using new admin address (should fail)
+     client.set_admin(&admin_new);
+ }
+
+ #[test]
+ fn test_upgrade_uses_stored_admin() {
+     let env = Env::default();
+     env.mock_all_auths();
+     let contract_address = env.register(MarketContract, ());
+     let mut client = MarketContractClient::new(&env, &contract_address);
+     
+     let admin = Address::generate(&env);
+     let fee_recipient = Address::generate(&env);
+     let new_wasm_hash = BytesN::from_array(&env, &[0u8; 32]);
+     
+     // Initialize contract
+     client.initialize(&admin, &100, &fee_recipient);
+     
+     // Upgrade should work with stored admin (no admin parameter needed)
+     // This tests that upgrade now looks up admin from storage
+     client.upgrade(&new_wasm_hash);
+     // If we reach here without panic, the upgrade succeeded using stored admin
+ }
+
+ #[test]
+ #[should_panic(expected = "Unauthorized")]
+ fn test_upgrade_unauthorized_fails() {
+     let env = Env::default();
+     // Not mocking auths to test unauthorized access
+     let contract_address = env.register(MarketContract, ());
+     let client = MarketContractClient::new(&env, &contract_address);
+     
+     let admin = Address::generate(&env);
+     let fee_recipient = Address::generate(&env);
+     let new_wasm_hash = BytesN::from_array(&env, &[0u8; 32]);
+     
+     // Initialize contract
+     client.initialize(&admin, &100, &fee_recipient);
+     
+     // Try to upgrade without proper auth (should fail)
+     client.upgrade(&new_wasm_hash);
+ }
+
+ // Helper macro to check for panics with specific message
+ macro_rules! assert_panic_with_msg {
+     ($f:expr, $msg:expr) => {
+         let result = std::panic::catch_unwind(|| $f);
+         assert!(result.is_err(), "Expected panic but none occurred");
+         if let Err(payload) = result {
+             if let Some(s) = payload.downcast_ref::<&str>() {
+                 assert!(
+                     s.contains($msg),
+                     "Expected panic message containing '{}', got: '{}'",
+                     $msg,
+                     s
+                 );
+             } else if let Some(s) = payload.downcast_ref::<String>() {
+                 assert!(
+                     s.contains($msg),
+                     "Expected panic message containing '{}', got: '{}'",
+                     $msg,
+                     s
+                 );
+             } else {
+                 panic!("Unable to extract panic message");
+             }
+         }
+     };
+ }

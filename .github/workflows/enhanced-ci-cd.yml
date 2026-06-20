@@ -169,9 +169,23 @@ jobs:
           restore-keys: |
             cargo-${{ runner.os }}-
 
-      - name: Run contract tests
-        run: cargo test --all
+      - name: Install LLVM tools
+        run: |
+          rustup component add llvm-tools-preview
+          cargo install --locked cargo-llvm-cov
+
+      - name: Run contract coverage
+        run: |
+          cargo llvm-cov --workspace --lcov --output-path target/coverage/lcov.info --fail-under-lines 80
         working-directory: packages/contracts
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: contracts-coverage-report
+          path: packages/contracts/target/coverage
+          retention-days: 7
 
   contracts-build:
     name: Contracts WASM Build

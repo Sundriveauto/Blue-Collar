@@ -1,3 +1,5 @@
+// ─── Core domain types ────────────────────────────────────────────────────────
+
 export interface Category {
   id: string;
   name: string;
@@ -45,6 +47,22 @@ export interface Review {
   };
 }
 
+// ─── Auth types ───────────────────────────────────────────────────────────────
+
+/** Authenticated user shape returned from /auth/me and stored in AuthContext. */
+export interface AuthUser {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: "user" | "curator" | "admin";
+  verified: boolean;
+  avatar?: string | null;
+  onboardingCompleted?: boolean;
+}
+
+// ─── Pagination ───────────────────────────────────────────────────────────────
+
 export interface Meta {
   total: number;
   page: number;
@@ -58,11 +76,32 @@ export interface RatingDistributionEntry {
   percentage: number;
 }
 
+// ─── API response wrappers ────────────────────────────────────────────────────
+
+/** Standard API envelope returned by all endpoints. */
 export interface ApiResponse<T> {
   data: T;
   meta?: Meta;
   status: string;
   code: number;
+  message?: string;
+}
+
+/** Paginated list response. */
+export type PaginatedResponse<T> = ApiResponse<T[]> & { meta: Meta };
+
+// ─── Form types ───────────────────────────────────────────────────────────────
+
+export interface LoginForm {
+  email: string;
+  password: string;
+}
+
+export interface RegisterForm {
+  firstName: string;
+  lastName: string;
+  email: string;
+  password: string;
 }
 
 // ── Analytics types ──────────────────────────────────────────────────────────

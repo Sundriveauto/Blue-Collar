@@ -7,3 +7,44 @@ storage/uploads/*
 !storage/uploads/.gitkeep
 
 packages/api_backup/
+
+# Test snapshots
+**/__snapshots__/
+*.snap
+
+# Coverage reports
+coverage/
+.nyc_output/
+
+# Build artifacts
+*.tsbuildinfo
+build/
+out/
+
+# Stryker mutation testing
+.stryker-tmp/
+reports/
+
+# Pact contract testing
+pacts/
+.pact/
+
+# Rust build artifacts
+packages/contracts/target/
+
+# OS files
+Thumbs.db
+
+# Editor directories
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# npm lockfile (project uses pnpm)
+package-lock.json
+
+# Temporary files
+*.tmp
+*.bak
+.cache/

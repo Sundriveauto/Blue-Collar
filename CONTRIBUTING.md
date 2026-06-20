@@ -85,6 +85,11 @@ BREAKING CHANGE: clients must update the endpoint path.
 
 ---
 
+## Release Notes
+
+This repository uses `release-please` to generate `CHANGELOG.md` from Conventional Commits.
+Do not edit `CHANGELOG.md` manually; use the commit convention above and let the release workflow update the changelog on merge.
+
 ## Branch Naming
 
 ```
@@ -125,6 +130,31 @@ Examples:
 ### App (Next.js)
 
 See [packages/app/CONTRIBUTING.md](./packages/app/CONTRIBUTING.md) for frontend-specific conventions.
+
+---
+
+## Database Migrations
+
+### Migration Safety Process
+
+When modifying the database schema:
+
+1. **Make schema changes** in `packages/api/prisma/schema.prisma`
+2. **Create a migration**: `npx prisma migrate dev --name <descriptive-name>`
+3. **For destructive migrations** (DROP COLUMN, DROP TABLE, ALTER COLUMN):
+   - Add the `migration:destructive` label to your PR
+   - Request explicit review from a maintainer
+   - Include justification in the PR description
+4. **CI will verify** that destructive migrations are properly labeled
+
+### Destructive Operations Require Manual Approval
+
+The CI pipeline will flag any migration containing:
+- `DROP COLUMN`
+- `DROP TABLE`
+- `ALTER COLUMN`
+
+These changes require the `migration:destructive` label and manual approval before merging.
 
 ---
 

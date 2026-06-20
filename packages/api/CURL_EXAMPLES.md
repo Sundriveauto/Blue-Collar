@@ -187,9 +187,15 @@ curl -X PUT "$API_BASE_URL/workers/<worker-id>" \
   -d '{"name":"Jane Electric Pro"}'
 ```
 
-Multipart update via method override:
+Multipart update via method override (file upload):
 
 ```bash
+# Note: This uses the X-HTTP-Method: PUT header to override the POST method.
+# HTML forms and multipart/form-data only support GET/POST, so we use POST
+# with the X-HTTP-Method header to indicate PUT semantics.
+# The API's method-override middleware rewrites this to PUT before routing.
+# See DOCUMENTATION.json for detailed explanation.
+
 curl -X POST "$API_BASE_URL/workers/<worker-id>" \
   -H "Authorization: Bearer $CURATOR_TOKEN" \
   -H "X-HTTP-Method: PUT" \
@@ -294,7 +300,7 @@ List reviews:
 curl "$API_BASE_URL/workers/<worker-id>/reviews"
 ```
 
-Create review:
+Create review (authenticated user):
 
 ```bash
 curl -X POST "$API_BASE_URL/workers/<worker-id>/reviews" \
@@ -302,11 +308,101 @@ curl -X POST "$API_BASE_URL/workers/<worker-id>/reviews" \
   -H "Content-Type: application/json" \
   -d '{
     "rating": 5,
-    "comment": "Great work and on time"
+    "body": "Great work and on time"
   }'
 ```
 
+Update review (review author):
+
+```bash
+curl -X PUT "$API_BASE_URL/workers/<worker-id>/reviews/<review-id>" \
+  -H "Authorization: Bearer $USER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "rating": 4,
+    "body": "Good work, minor delays"
+  }'
+```
+
+Delete review (review author):
+
+```bash
+curl -X DELETE "$API_BASE_URL/workers/<worker-id>/reviews/<review-id>" \
+  -H "Authorization: Bearer $USER_TOKEN"
+```
+
+Flag review for moderation (authenticated user):
+
+```bash
+curl -X PATCH "$API_BASE_URL/workers/<worker-id>/reviews/<review-id>/flag" \
+  -H "Authorization: Bearer $USER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"reason":"inappropriate"}'
+```
+
+Get moderation queue (admin):
+
+```bash
+curl "$API_BASE_URL/workers/<worker-id>/reviews/moderation/queue" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+```
+
+Moderate review (admin):
+
+```bash
+curl -X PATCH "$API_BASE_URL/workers/<worker-id>/reviews/<review-id>/moderate" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"action":"approve"}'
+```
+
 ## 5. User Endpoints
+
+### 5.1 Notifications
+
+Get notification preferences:
+
+```bash
+curl "$API_BASE_URL/users/me/notifications" \
+  -H "Authorization: Bearer $USER_TOKEN"
+```
+
+Update notification preferences:
+
+```bash
+curl -X PUT "$API_BASE_URL/users/me/notifications" \
+  -H "Authorization: Bearer $USER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "newWorkerNearby": true,
+    "statusChange": false,
+    "reviewReply": true,
+    "announcements": false
+  }'
+```
+
+Get notification history:
+
+```bash
+curl "$API_BASE_URL/users/me/notifications/history?page=1&limit=20" \
+  -H "Authorization: Bearer $USER_TOKEN"
+```
+
+Mark notification as read:
+
+```bash
+curl -X PATCH "$API_BASE_URL/users/me/notifications/<notification-id>/read" \
+  -H "Authorization: Bearer $USER_TOKEN"
+```
+
+Mark all notifications as read:
+
+```bash
+curl -X PATCH "$API_BASE_URL/users/me/notifications/read-all" \
+  -H "Authorization: Bearer $USER_TOKEN"
+```
+
+### 5.2 Push Subscriptions
 
 Save push subscription:
 
@@ -329,7 +425,70 @@ curl -X DELETE "$API_BASE_URL/users/me/push-subscription" \
   -d '{"endpoint":"https://fcm.googleapis.com/fcm/send/abc"}'
 ```
 
-## 6. Admin Endpoints
+## 6. Webhook Endpoints
+
+Create webhook subscription (curator/admin):
+
+```bash
+curl -X POST "$API_BASE_URL/webhooks" \
+  -H "Authorization: Bearer $CURATOR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com/webhook",
+    "events": ["worker.created", "worker.updated", "review.created"]
+  }'
+```
+
+List webhook subscriptions (curator/admin):
+
+```bash
+curl "$API_BASE_URL/webhooks" \
+  -H "Authorization: Bearer $CURATOR_TOKEN"
+```
+
+Get webhook details (curator/admin):
+
+```bash
+curl "$API_BASE_URL/webhooks/<webhook-id>" \
+  -H "Authorization: Bearer $CURATOR_TOKEN"
+```
+
+Update webhook subscription (curator/admin):
+
+```bash
+curl -X PUT "$API_BASE_URL/webhooks/<webhook-id>" \
+  -H "Authorization: Bearer $CURATOR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com/webhook-v2",
+    "events": ["worker.created", "worker.deleted"]
+  }'
+```
+
+Delete webhook subscription (curator/admin):
+
+```bash
+curl -X DELETE "$API_BASE_URL/webhooks/<webhook-id>" \
+  -H "Authorization: Bearer $CURATOR_TOKEN"
+```
+
+Get webhook delivery logs (curator/admin):
+
+```bash
+curl "$API_BASE_URL/webhooks/<webhook-id>/logs?page=1&limit=50" \
+  -H "Authorization: Bearer $CURATOR_TOKEN"
+```
+
+Retry failed webhook delivery (curator/admin):
+
+```bash
+curl -X POST "$API_BASE_URL/webhooks/<webhook-id>/logs/<log-id>/retry" \
+  -H "Authorization: Bearer $CURATOR_TOKEN"
+```
+
+## 7. Admin Endpoints
+
+### 7.1 Stats and Listings
 
 Admin stats:
 
@@ -352,9 +511,84 @@ curl "$API_BASE_URL/admin/users?page=1&limit=25" \
   -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
 
-## 7. Role-based Scenario Examples
+### 7.2 Bulk Operations
 
-## 7.1 Plain user attempts worker creation (expected 403)
+Bulk toggle worker active status (admin):
+
+```bash
+curl -X POST "$API_BASE_URL/admin/workers/bulk-toggle" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "workerIds": ["<worker-id-1>", "<worker-id-2>"],
+    "isActive": true
+  }'
+```
+
+Bulk delete workers (admin):
+
+```bash
+curl -X DELETE "$API_BASE_URL/admin/workers/bulk-delete" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "workerIds": ["<worker-id-1>", "<worker-id-2>"]
+  }'
+```
+
+Bulk update worker category (admin):
+
+```bash
+curl -X PATCH "$API_BASE_URL/admin/workers/bulk-update" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "workerIds": ["<worker-id-1>", "<worker-id-2>"],
+    "categoryId": "<new-category-id>"
+  }'
+```
+
+Bulk verify workers (admin):
+
+```bash
+curl -X POST "$API_BASE_URL/admin/workers/bulk-verify" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "workerIds": ["<worker-id-1>", "<worker-id-2>"],
+    "isVerified": true
+  }'
+```
+
+### 7.3 Import/Export
+
+Export workers (CSV):
+
+```bash
+curl "$API_BASE_URL/admin/export/workers" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -o workers.csv
+```
+
+Export users (CSV):
+
+```bash
+curl "$API_BASE_URL/admin/export/users" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -o users.csv
+```
+
+Import workers from CSV:
+
+```bash
+curl -X POST "$API_BASE_URL/admin/workers/import" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -F "file=@workers.csv"
+```
+
+## 8. Role-based Scenario Examples
+
+## 8.1 Plain user attempts worker creation (expected 403)
 
 ```bash
 curl -i -X POST "$API_BASE_URL/workers" \
@@ -373,7 +607,7 @@ Expected error envelope:
 }
 ```
 
-## 7.2 Missing JWT (expected 401)
+## 8.2 Missing JWT (expected 401)
 
 ```bash
 curl -i "$API_BASE_URL/auth/me"
@@ -389,9 +623,9 @@ Expected:
 }
 ```
 
-## 8. Common Error Response Examples
+## 9. Common Error Response Examples
 
-## 8.1 Validation error (400)
+## 9.1 Validation error (400)
 
 ```bash
 curl -i -X POST "$API_BASE_URL/auth/register" \
@@ -399,7 +633,7 @@ curl -i -X POST "$API_BASE_URL/auth/register" \
   -d '{"email":"invalid","password":"short"}'
 ```
 
-## 8.2 Resource not found (404)
+## 9.2 Resource not found (404)
 
 ```bash
 curl -i "$API_BASE_URL/workers/non-existent-id"
@@ -415,7 +649,7 @@ Common envelope:
 }
 ```
 
-## 8.3 Internal error (500)
+## 9.3 Internal error (500)
 
 All unexpected server failures follow this envelope:
 
@@ -427,7 +661,7 @@ All unexpected server failures follow this envelope:
 }
 ```
 
-## 9. Rate Limiting Behavior
+## 10. Rate Limiting Behavior
 
 The project includes an auth rate-limiter configuration in `src/config/rateLimiter.ts` with defaults:
 

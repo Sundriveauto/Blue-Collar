@@ -1,15 +1,17 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import ImageLightbox from "./ImageLightbox";
 
 interface Props {
   src: string;
   alt: string;
   className?: string;
+  priority?: boolean;
 }
 
-export default function ZoomableAvatar({ src, alt, className }: Props) {
+export default function ZoomableAvatar({ src, alt, className, priority = false }: Props) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -19,8 +21,7 @@ export default function ZoomableAvatar({ src, alt, className }: Props) {
         aria-label={`View full size photo of ${alt}`}
         className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={src} alt={alt} className={className} />
+        <Image src={src} alt={alt} width={80} height={80} priority={priority} className={className} />
       </button>
       {open && <ImageLightbox src={src} alt={alt} onClose={() => setOpen(false)} />}
     </>

@@ -50,7 +50,7 @@ export default async function FeaturedWorkers() {
         <p className="mt-6 text-gray-500">No workers available yet. Check back soon.</p>
       ) : (
         <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {workers.map((worker) => (
+          {workers.map((worker, index) => (
             <div key={worker.id} className="rounded-xl border border-gray-200 p-5 flex flex-col gap-4">
               <div className="flex items-center gap-4">
                 {worker.avatar ? (
@@ -59,6 +59,7 @@ export default async function FeaturedWorkers() {
                     alt={worker.name}
                     width={56}
                     height={56}
+                    priority={index === 0}
                     className="rounded-full object-cover"
                   />
                 ) : (

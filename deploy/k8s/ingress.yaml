@@ -6,11 +6,13 @@ metadata:
   annotations:
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
 spec:
   ingressClassName: nginx
   tls:
   - hosts:
     - api.bluecollar.io
+    - app.bluecollar.io
     secretName: bluecollar-tls
   rules:
   - host: api.bluecollar.io
@@ -23,3 +25,13 @@ spec:
             name: bluecollar-api
             port:
               number: 80
+  - host: app.bluecollar.io
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: bluecollar-app
+            port:
+              number: 3001

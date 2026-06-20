@@ -1,0 +1,25 @@
+[package]
+name = "bluecollar-fuzz"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Property-based fuzz tests for BlueCollar Soroban contracts"
+
+[lib]
+name = "bluecollar_fuzz"
+
+[[bin]]
+name = "fuzz_register"
+path = "fuzz_targets/fuzz_register.rs"
+
+[[bin]]
+name = "fuzz_tip"
+path = "fuzz_targets/fuzz_tip.rs"
+
+[dev-dependencies]
+soroban-sdk = { version = "21.0.0", features = ["testutils"] }
+bluecollar-registry = { path = "../registry" }
+bluecollar-market = { path = "../market" }
+proptest = "1.4"
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1.3", features = ["derive"] }

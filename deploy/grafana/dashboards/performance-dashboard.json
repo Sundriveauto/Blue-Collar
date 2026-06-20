@@ -1,0 +1,178 @@
+{
+  "dashboard": {
+    "title": "Blue-Collar API Performance",
+    "tags": ["performance", "api"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Request Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(http_requests_total{job=\"bluecollar-api\"}[5m])",
+            "legendFormat": "{{method}} {{path}}"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "req/sec",
+            "format": "short"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Response Time Percentiles",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, rate(http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "p50"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "p95"
+          },
+          {
+            "expr": "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "p99"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "seconds",
+            "format": "s"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Error Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(http_requests_total{status=~\"5..\"}[5m]) / rate(http_requests_total[5m]) * 100",
+            "legendFormat": "Error %"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "%",
+            "format": "percent"
+          }
+        ],
+        "alert": {
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [5],
+                "type": "gt"
+              },
+              "operator": {
+                "type": "and"
+              },
+              "query": {
+                "params": ["A", "5m", "now"]
+              },
+              "reducer": {
+                "params": [],
+                "type": "avg"
+              },
+              "type": "query"
+            }
+          ],
+          "name": "High Error Rate Alert"
+        }
+      },
+      {
+        "id": 4,
+        "title": "Database Query Duration",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(db_query_duration_seconds_bucket[5m]))",
+            "legendFormat": "p95 {{operation}}"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "seconds",
+            "format": "s"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Memory Usage",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "nodejs_heap_size_used_bytes / 1024 / 1024",
+            "legendFormat": "Heap Used (MB)"
+          },
+          {
+            "expr": "nodejs_heap_size_total_bytes / 1024 / 1024",
+            "legendFormat": "Heap Total (MB)"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "MB",
+            "format": "short"
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "CPU Usage",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(process_cpu_seconds_total[5m]) * 100",
+            "legendFormat": "CPU %"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "%",
+            "format": "percent"
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Event Loop Lag",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "nodejs_eventloop_lag_seconds",
+            "legendFormat": "Event Loop Lag"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "seconds",
+            "format": "s"
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Active Connections",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "nodejs_active_handles_total",
+            "legendFormat": "Active Handles"
+          }
+        ]
+      }
+    ],
+    "refresh": "30s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    }
+  }
+}

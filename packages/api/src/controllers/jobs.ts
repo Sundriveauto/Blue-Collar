@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express'
 import * as jobService from '../services/job.service.js'
 import { handleError } from '../utils/handleError.js'
+import { ErrorMessages, HttpStatus } from '../constants/index.js'
 
 export async function listJobs(req: Request, res: Response) {
   try {
@@ -56,7 +57,7 @@ export async function deleteJob(req: Request, res: Response) {
 export async function applyToJob(req: Request, res: Response) {
   try {
     const { workerId, coverLetter } = req.body
-    if (!workerId) return res.status(400).json({ status: 'error', message: 'workerId is required', code: 400 })
+    if (!workerId) return res.status(HttpStatus.BAD_REQUEST).json({ status: 'error', message: ErrorMessages.WORKER_ID_REQUIRED, code: HttpStatus.BAD_REQUEST })
     const application = await jobService.applyToJob(req.params.id, String(workerId), coverLetter)
     return res.status(201).json({ data: application, status: 'success', code: 201 })
   } catch (err) {
@@ -77,7 +78,7 @@ export async function updateApplicationStatus(req: Request, res: Response) {
   try {
     const { status } = req.body
     if (!['accepted', 'rejected'].includes(status)) {
-      return res.status(400).json({ status: 'error', message: 'status must be accepted or rejected', code: 400 })
+      return res.status(HttpStatus.BAD_REQUEST).json({ status: 'error', message: ErrorMessages.APPLICATION_STATUS_INVALID, code: HttpStatus.BAD_REQUEST })
     }
     const application = await jobService.updateApplicationStatus(
       req.params.id,
@@ -94,7 +95,7 @@ export async function updateApplicationStatus(req: Request, res: Response) {
 export async function withdrawApplication(req: Request, res: Response) {
   try {
     const { workerId } = req.body
-    if (!workerId) return res.status(400).json({ status: 'error', message: 'workerId is required', code: 400 })
+    if (!workerId) return res.status(HttpStatus.BAD_REQUEST).json({ status: 'error', message: ErrorMessages.WORKER_ID_REQUIRED, code: HttpStatus.BAD_REQUEST })
     const application = await jobService.withdrawApplication(req.params.id, String(workerId))
     return res.json({ data: application, status: 'success', code: 200 })
   } catch (err) {

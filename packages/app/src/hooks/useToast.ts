@@ -1,27 +1,15 @@
-"use client";
+/**
+ * Thin wrapper around sonner so callers don't import sonner directly.
+ * Supports success, error, warning, and info variants.
+ */
+import { toast as sonnerToast } from "sonner";
 
-import { useState, useCallback } from "react";
-
-export type ToastType = "success" | "error";
-
-interface Toast {
-  id: number;
-  message: string;
-  type: ToastType;
-}
+export type ToastType = "success" | "error" | "warning" | "info";
 
 export function useToast() {
-  const [toasts, setToasts] = useState<Toast[]>([]);
+  const toast = (message: string, type: ToastType = "success") => {
+    sonnerToast[type](message);
+  };
 
-  const toast = useCallback((message: string, type: ToastType = "success") => {
-    const id = Date.now();
-    setToasts((prev) => [...prev, { id, message, type }]);
-    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3500);
-  }, []);
-
-  const dismiss = useCallback((id: number) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  }, []);
-
-  return { toasts, toast, dismiss };
+  return { toast };
 }

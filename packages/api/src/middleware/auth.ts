@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express'
-import jwt from 'jsonwebtoken'
-import { env } from '../config/env.js'
+import { verifyToken } from '../utils/tokenValidator.js'
+import { hasRole } from '../utils/roleChecker.js'
 
 /**
  * Middleware: verify the Bearer JWT in the `Authorization` header.
@@ -15,7 +15,7 @@ export function authenticate(req: Request, res: Response, next: NextFunction) {
   const token = req.headers.authorization?.split(' ')[1]
   if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized', code: 401 })
   try {
-    req.user = jwt.verify(token, env.JWT_SECRET) as { id: string; role: string }
+    req.user = verifyToken(token)
     next()
   } catch {
     return res.status(401).json({ status: 'error', message: 'Invalid token', code: 401 })
@@ -35,7 +35,7 @@ export function authenticate(req: Request, res: Response, next: NextFunction) {
  */
 export function authorize(...roles: string[]) {
   return (req: Request, res: Response, next: NextFunction) => {
-    if (!req.user || !roles.includes(req.user.role)) {
+    if (!hasRole(req.user, roles)) {
       return res.status(403).json({ status: 'error', message: 'Forbidden', code: 403 })
     }
     next()

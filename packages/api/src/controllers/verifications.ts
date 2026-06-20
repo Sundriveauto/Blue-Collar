@@ -1,13 +1,14 @@
 import type { Request, Response } from 'express'
 import * as verificationService from '../services/verification.service.js'
 import { handleError } from '../utils/handleError.js'
+import { ErrorMessages, HttpStatus } from '../constants/index.js'
 
 /** POST /api/verifications — submit a verification request */
 export async function requestVerification(req: Request, res: Response) {
   try {
     const { workerId, documentUrl, notes } = req.body
     if (!workerId || !documentUrl) {
-      return res.status(400).json({ status: 'error', message: 'workerId and documentUrl are required', code: 400 })
+      return res.status(HttpStatus.BAD_REQUEST).json({ status: 'error', message: ErrorMessages.VERIFICATION_FIELDS_REQUIRED, code: HttpStatus.BAD_REQUEST })
     }
     const result = await verificationService.requestVerification(workerId, req.user!.id, documentUrl, notes)
     return res.status(201).json({ data: result, status: 'success', code: 201 })
@@ -32,7 +33,7 @@ export async function reviewRequest(req: Request, res: Response) {
   try {
     const { status, reviewNote } = req.body
     if (!status || !['approved', 'rejected'].includes(status)) {
-      return res.status(400).json({ status: 'error', message: 'status must be "approved" or "rejected"', code: 400 })
+      return res.status(HttpStatus.BAD_REQUEST).json({ status: 'error', message: ErrorMessages.VERIFICATION_STATUS_INVALID, code: HttpStatus.BAD_REQUEST })
     }
     const result = await verificationService.reviewRequest(req.params.id, req.user!.id, status, reviewNote)
     return res.json({ data: result, status: 'success', code: 200 })

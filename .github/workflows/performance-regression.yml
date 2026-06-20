@@ -1,0 +1,62 @@
+name: Performance Regression Tests
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  perf-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 9
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Start API
+        run: |
+          cd packages/api
+          npm run build
+          npm run start:test &
+          sleep 10
+
+      - name: Install k6
+        run: |
+          sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3232A
+          echo "deb https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install -y k6
+
+      - name: Run performance tests
+        run: |
+          k6 run deploy/load-tests/performance-baseline.js
+
+      - name: Store baseline metrics
+        uses: actions/upload-artifact@v3
+        with:
+          name: baseline-metrics
+          path: perf-metrics.json
+
+      - name: Comment PR with results
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const metrics = JSON.parse(fs.readFileSync('perf-metrics.json', 'utf8'));
+            const comment = `## Performance Test Results\n\n- p95 Latency: ${metrics.p95}ms\n- p99 Latency: ${metrics.p99}ms\n- RPS: ${metrics.rps}`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });

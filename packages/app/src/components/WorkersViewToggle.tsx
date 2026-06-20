@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { LayoutGrid, Map } from "lucide-react";
 import type { Worker } from "@/types";
@@ -24,9 +24,21 @@ interface Props {
 }
 
 type View = "list" | "map";
+const STORAGE_KEY = "bc_workers_view";
 
 export default function WorkersViewToggle({ workers, hasFilters }: Props) {
   const [view, setView] = useState<View>("list");
+
+  // Restore persisted view on mount
+  useEffect(() => {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored === "map" || stored === "list") setView(stored);
+  }, []);
+
+  const changeView = (v: View) => {
+    setView(v);
+    localStorage.setItem(STORAGE_KEY, v);
+  };
 
   return (
     <div className="flex-1">
@@ -37,7 +49,7 @@ export default function WorkersViewToggle({ workers, hasFilters }: Props) {
         </p>
         <div className="flex items-center rounded-lg border bg-white p-1 gap-1 shadow-sm">
           <button
-            onClick={() => setView("list")}
+            onClick={() => changeView("list")}
             aria-label="List view"
             className={cn(
               "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
@@ -50,7 +62,7 @@ export default function WorkersViewToggle({ workers, hasFilters }: Props) {
             List
           </button>
           <button
-            onClick={() => setView("map")}
+            onClick={() => changeView("map")}
             aria-label="Map view"
             className={cn(
               "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
@@ -66,24 +78,26 @@ export default function WorkersViewToggle({ workers, hasFilters }: Props) {
       </div>
 
       {/* Content */}
-      {view === "list" ? (
-        workers.length === 0 ? (
-          <EmptyState
-            variant={hasFilters ? "no-search-results" : "no-workers"}
-            ctaHref="/workers"
-          />
+      <div className="min-h-[500px]">
+        {view === "list" ? (
+          workers.length === 0 ? (
+            <EmptyState
+              variant={hasFilters ? "no-search-results" : "no-workers"}
+              ctaHref="/workers"
+            />
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {workers.map((w) => (
+                <WorkerCard key={w.id} worker={w} />
+              ))}
+            </div>
+          )
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {workers.map((w) => (
-              <WorkerCard key={w.id} worker={w} />
-            ))}
+          <div className="h-[500px]">
+            <WorkerMap workers={workers} />
           </div>
-        )
-      ) : (
-        <div className="h-[500px]">
-          <WorkerMap workers={workers} />
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

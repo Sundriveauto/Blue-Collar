@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import WorkerInfiniteList from "@/components/WorkerInfiniteList";
+import WorkersViewToggle from "@/components/WorkersViewToggle";
+import SearchAutocomplete from "@/components/SearchAutocomplete";
 import type { Worker, Category, ApiResponse } from "@/types";
 
 export const metadata: Metadata = {
@@ -53,7 +54,7 @@ export default async function WorkersPage({ searchParams }: PageProps) {
   if (searchParams.available) params.available = searchParams.available
   if (searchParams.listedSince) params.listedSince = searchParams.listedSince
 
-  const [{ data: workers, meta }, categories] = await Promise.all([
+  const [{ data: workers }, categories] = await Promise.all([
     fetchWorkers(params),
     fetchCategories(),
   ]);
@@ -176,13 +177,10 @@ export default async function WorkersPage({ searchParams }: PageProps) {
         </aside>
 
           {/* Results */}
-          <div className="flex-1">
-            <WorkerInfiniteList
-              initialWorkers={workers}
-              initialMeta={meta}
-              params={params}
-            />
-          </div>
+          <WorkersViewToggle
+            workers={workers}
+            hasFilters={Object.keys(params).some((k) => k !== "page" && k !== "limit" && params[k])}
+          />
       </div>
     </div>
   );

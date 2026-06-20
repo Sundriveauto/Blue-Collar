@@ -1,41 +1,98 @@
 # BlueCollar Contracts Makefile
-# Requires: Rust, cargo, stellar CLI (https://developers.stellar.org/docs/tools/stellar-cli)
+#
+# Required env vars for deploy targets:
+#   SOURCE          — Stellar secret key or funded account alias
+#   ADMIN           — Admin Stellar address
+#   FEE_RECIPIENT   — Address that receives protocol fees (market contract)
+#   FEE_BPS         — Protocol fee in basis points, default 0
 
-WASM_TARGET := wasm32-unknown-unknown
-NETWORK     := testnet
-REGISTRY_WASM := target/wasm32-unknown-unknown/release/bluecollar_registry.wasm
-MARKET_WASM   := target/wasm32-unknown-unknown/release/bluecollar_market.wasm
+SOURCE        ?= $(error SOURCE is required)
+ADMIN         ?= $(error ADMIN is required)
+FEE_RECIPIENT ?= $(ADMIN)
+FEE_BPS       ?= 0
 
-.PHONY: build test deploy-testnet clean fmt clippy
+WASM_DIR := target/wasm32-unknown-unknown/release
 
-## Build both contracts for release (WASM)
-build:
-	cargo build --release --target $(WASM_TARGET)
+.PHONY: build build-registry build-market coverage fuzz fuzz-register fuzz-tip \
+        deploy-testnet deploy-mainnet \
+        deploy-registry-testnet deploy-market-testnet \
+        deploy-registry-mainnet deploy-market-mainnet \
+        clean
 
-## Run all unit tests
-test:
-	cargo test
+# ---------------------------------------------------------------------------
+# Build
+# ---------------------------------------------------------------------------
 
-## Format all source files
-fmt:
-	cargo fmt
+build: build-registry build-market
 
-## Run Clippy with warnings-as-errors
-clippy:
-	cargo clippy -- -D warnings
+build-registry:
+	cargo build --release --target wasm32-unknown-unknown --package bluecollar-registry
 
-## Deploy both contracts to Stellar testnet
-## Requires STELLAR_ACCOUNT env var to be set to a funded testnet identity.
-deploy-testnet: build
-	stellar contract deploy \
-		--wasm $(REGISTRY_WASM) \
-		--source $(STELLAR_ACCOUNT) \
-		--network $(NETWORK)
-	stellar contract deploy \
-		--wasm $(MARKET_WASM) \
-		--source $(STELLAR_ACCOUNT) \
-		--network $(NETWORK)
+build-market:
+	cargo build --release --target wasm32-unknown-unknown --package bluecollar-market
 
-## Remove build artifacts
+coverage:
+	rustup component add llvm-tools-preview
+	cargo install --locked cargo-llvm-cov
+	cargo llvm-cov --workspace --lcov --output-path target/coverage/lcov.info --fail-under-lines 80
+
+# ---------------------------------------------------------------------------
+# Fuzzing
+# ---------------------------------------------------------------------------
+
+fuzz: fuzz-register fuzz-tip
+
+fuzz-register:
+	cargo install --locked cargo-fuzz
+	cargo +nightly fuzz run fuzz_register -- -max_len=1024 -timeout=10
+
+fuzz-tip:
+	cargo install --locked cargo-fuzz
+	cargo +nightly fuzz run fuzz_tip -- -max_len=1024 -timeout=10
+
+# ---------------------------------------------------------------------------
+# Deploy — testnet
+# ---------------------------------------------------------------------------
+
+deploy-testnet: deploy-registry-testnet deploy-market-testnet
+
+deploy-registry-testnet: build-registry
+	./scripts/deploy-registry.sh \
+	  --network testnet \
+	  --source "$(SOURCE)" \
+	  --admin "$(ADMIN)"
+
+deploy-market-testnet: build-market
+	./scripts/deploy-market.sh \
+	  --network testnet \
+	  --source "$(SOURCE)" \
+	  --admin "$(ADMIN)" \
+	  --fee-bps "$(FEE_BPS)" \
+	  --fee-recipient "$(FEE_RECIPIENT)"
+
+# ---------------------------------------------------------------------------
+# Deploy — mainnet
+# ---------------------------------------------------------------------------
+
+deploy-mainnet: deploy-registry-mainnet deploy-market-mainnet
+
+deploy-registry-mainnet: build-registry
+	./scripts/deploy-registry.sh \
+	  --network mainnet \
+	  --source "$(SOURCE)" \
+	  --admin "$(ADMIN)"
+
+deploy-market-mainnet: build-market
+	./scripts/deploy-market.sh \
+	  --network mainnet \
+	  --source "$(SOURCE)" \
+	  --admin "$(ADMIN)" \
+	  --fee-bps "$(FEE_BPS)" \
+	  --fee-recipient "$(FEE_RECIPIENT)"
+
+# ---------------------------------------------------------------------------
+# Misc
+# ---------------------------------------------------------------------------
+
 clean:
 	cargo clean

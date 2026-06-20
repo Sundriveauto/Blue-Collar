@@ -5,6 +5,9 @@ export interface CreateWorkerBody {
   email?: string
   bio?: string
   avatar?: string
+  imageThumb?: string
+  imageMedium?: string
+  imageFull?: string
   walletAddress?: string
   locationId?: string
 }

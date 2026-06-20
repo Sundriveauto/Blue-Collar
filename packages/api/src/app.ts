@@ -5,6 +5,7 @@ import passport from './config/passport.js'
 import { redis, cacheMetrics } from './config/redis.js'
 import { db } from './db.js'
 import { requestLogger } from './middleware/requestLogger.js'
+import { registerEventHandlers } from './events/index.js'
 import authRoutes from './routes/auth.js'
 import categoryRoutes from './routes/categories.js'
 import workerRoutes from './routes/workers.js'
@@ -19,10 +20,26 @@ import responseTimeRoutes from './routes/response-time.js'
 import insuranceRoutes from './routes/insurance.js'
 import referralRoutes from './routes/referral.js'
 import analyticsRoutes from './routes/analytics.js'
+import paymentRoutes from './routes/payments.js'
+import vitalsRoutes from './routes/vitals.js'
 import { auditMiddleware } from './middleware/audit.js'
+import { sanitize } from './middleware/sanitize.js'
 import { versionMiddleware, deprecationWarning } from './middleware/version.js'
+import { errorHandler, notFoundHandler } from './middleware/errorHandler.js'
+import docsRouter from './openapi/docs.js'
+import { readFileSync } from 'node:fs'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const { version: API_VERSION } = JSON.parse(
+  readFileSync(join(__dirname, '..', 'package.json'), 'utf-8')
+)
 
 const app = express()
+
+// Register application event handlers
+registerEventHandlers()
 
 // Connect Redis (non-blocking — app starts even if Redis is down)
 redis.connect().catch(() => {})
@@ -30,6 +47,7 @@ redis.connect().catch(() => {})
 app.use(cors())
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
+app.use(sanitize)
 app.use(requestLogger)
 app.use(methodOverride('X-HTTP-Method'))
 app.use(passport.initialize())
@@ -51,8 +69,47 @@ app.use('/api', responseTimeRoutes)
 app.use('/api/workers', insuranceRoutes)
 app.use('/api/referrals', referralRoutes)
 app.use('/api/analytics', analyticsRoutes)
+app.use('/api/payments', paymentRoutes)
+app.use('/api', vitalsRoutes)
+// ── Versioned routes (v1) ─────────────────────────────────────────────────────
+app.use('/api/v1/auth', authRoutes)
+app.use('/api/v1/categories', categoryRoutes)
+app.use('/api/v1/workers', workerRoutes)
+app.use('/api/v1/admin', adminRoutes)
+app.use('/api/v1/users', userRoutes)
+app.use('/api/v1/disputes', disputeRoutes)
+app.use('/api/v1/recommendations', recommendationRoutes)
+app.use('/api/v1/webhooks', webhookRoutes)
+app.use('/api/v1/verifications', verificationRoutes)
+app.use('/api/v1/audit', auditRoutes)
+app.use('/api/v1', responseTimeRoutes)
+app.use('/api/v1/workers', insuranceRoutes)
+app.use('/api/v1/referrals', referralRoutes)
+app.use('/api/v1/payments', paymentRoutes)
 
-app.get('/health', async (_req, res) => {
+// ── Version endpoint ──────────────────────────────────────────────────────────
+app.get('/api/v1/version', (_req, res) => {
+  res.json({
+    version: API_VERSION,
+    apiVersion: 'v1',
+    status: 'current',
+    supported: ['v1'],
+    deprecated: [],
+    sunset: null,
+  })
+})
+
+// ── Redirect unversioned /api/* → /api/v1/* with deprecation headers ──────────
+app.use('/api', deprecationWarning, (req, res) => {
+  const target = `/api/v1${req.path}${req.search ?? (Object.keys(req.query).length ? '?' + new URLSearchParams(req.query as any).toString() : '')}`
+  res.redirect(301, target)
+})
+
+app.get('/health', (_req, res) => {
+  res.status(200).json({ status: 'ok' })
+})
+
+app.get('/ready', async (_req, res) => {
   const checks: Record<string, { status: 'ok' | 'error'; latencyMs?: number; error?: string }> = {}
 
   // Database check
@@ -90,5 +147,16 @@ app.get('/metrics/cache', (_req, res) => {
     hitRate: total > 0 ? `${Math.round((cacheMetrics.hits / total) * 100)}%` : '0%',
   })
 })
+
+// Swagger UI — development only
+if (process.env['NODE_ENV'] !== 'production') {
+  app.use('/api', docsRouter)
+}
+
+// 404 handler — must come after all routes
+app.use(notFoundHandler)
+
+// Global error handler — must be last
+app.use(errorHandler)
 
 export default app

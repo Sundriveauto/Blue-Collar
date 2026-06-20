@@ -26,6 +26,16 @@ vi.mock('../models/worker.model.js', () => ({
   }),
 }))
 
+// Mock the logger
+vi.mock('../utils/logger.js', () => ({
+  createServiceLogger: () => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  }),
+}))
+
 const mockDb = db as any
 
 // Helper to create mock worker data
@@ -80,12 +90,14 @@ describe('listWorkers', () => {
       limit: 20,
       pages: 1,
     })
-    expect(mockDb.worker.findMany).toHaveBeenCalledWith({
-      where: { isActive: true },
-      skip: 0,
-      take: 20,
-      include: { category: true, curator: true },
-    })
+    expect(mockDb.worker.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ isActive: true, deletedAt: null }),
+        skip: 0,
+        take: 20,
+        include: { category: true, curator: true },
+      })
+    )
   })
 
   it('filters by category', async () => {
@@ -105,24 +117,15 @@ describe('listWorkers', () => {
     )
   })
 
-  it('filters by search term in name and bio', async () => {
-    const mockWorkers = [createMockWorker()]
-    mockDb.worker.findMany.mockResolvedValue(mockWorkers)
-    mockDb.worker.count.mockResolvedValue(1)
+  it('uses full-text search when search term is provided', async () => {
+    // The service delegates to $queryRawUnsafe for full-text search
+    mockDb.$queryRawUnsafe = vi.fn().mockResolvedValue([])
 
     await workerService.listWorkers({ search: 'plumber' })
 
-    expect(mockDb.worker.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          isActive: true,
-          OR: [
-            { name: { contains: 'plumber', mode: 'insensitive' } },
-            { bio: { contains: 'plumber', mode: 'insensitive' } },
-          ],
-        }),
-      })
-    )
+    // findMany should NOT be called — raw SQL is used instead
+    expect(mockDb.worker.findMany).not.toHaveBeenCalled()
+    expect(mockDb.$queryRawUnsafe).toHaveBeenCalled()
   })
 
   it('filters by location (city, state, country)', async () => {
@@ -177,14 +180,13 @@ describe('listWorkers', () => {
     expect(result.meta.total).toBe(0)
   })
 
-  it('combines multiple filters', async () => {
+  it('combines category and location filters without search', async () => {
     const mockWorkers = [createMockWorker()]
     mockDb.worker.findMany.mockResolvedValue(mockWorkers)
     mockDb.worker.count.mockResolvedValue(1)
 
     await workerService.listWorkers({
       category: 'category-1',
-      search: 'plumber',
       city: 'New York',
       page: 2,
       limit: 15,
@@ -195,7 +197,6 @@ describe('listWorkers', () => {
         where: expect.objectContaining({
           isActive: true,
           categoryId: 'category-1',
-          OR: expect.any(Array),
           location: expect.any(Object),
         }),
         skip: 15,
@@ -216,7 +217,7 @@ describe('getWorker', () => {
 
     expect(result).toEqual(expect.objectContaining({ formatted: true }))
     expect(mockDb.worker.findUnique).toHaveBeenCalledWith({
-      where: { id: 'worker-1' },
+      where: { id: 'worker-1', deletedAt: null },
       include: { category: true, curator: true },
     })
   })
@@ -359,18 +360,19 @@ describe('updateWorker', () => {
 // ── deleteWorker ─────────────────────────────────────────────────────────────
 
 describe('deleteWorker', () => {
-  it('deletes a worker by id', async () => {
-    mockDb.worker.delete.mockResolvedValue({})
+  it('soft-deletes a worker by setting deletedAt', async () => {
+    mockDb.worker.update.mockResolvedValue({})
 
     await workerService.deleteWorker('worker-1')
 
-    expect(mockDb.worker.delete).toHaveBeenCalledWith({
+    expect(mockDb.worker.update).toHaveBeenCalledWith({
       where: { id: 'worker-1' },
+      data: { deletedAt: expect.any(Date) },
     })
   })
 
-  it('handles deletion of non-existent worker gracefully', async () => {
-    mockDb.worker.delete.mockRejectedValue(new Error('Record not found'))
+  it('propagates errors from the database', async () => {
+    mockDb.worker.update.mockRejectedValue(new Error('Record not found'))
 
     await expect(workerService.deleteWorker('nonexistent')).rejects.toThrow()
   })

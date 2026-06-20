@@ -1,0 +1,88 @@
+name: Database Migration Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/api/prisma/**'
+  pull_request:
+    paths:
+      - 'packages/api/prisma/**'
+
+jobs:
+  migration-test:
+    name: Test migrations
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: bluecollar
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_DB: bluecollar_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://bluecollar:testpassword@localhost:5432/bluecollar_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: packages/api
+
+      # Apply all migrations from scratch
+      - name: Run migrations (forward)
+        run: npx prisma migrate deploy
+        working-directory: packages/api
+
+      # Verify schema matches expected state
+      - name: Validate schema drift
+        run: npx prisma migrate diff \
+          --from-schema-datasource prisma/schema.prisma \
+          --to-schema-datamodel prisma/schema.prisma \
+          --exit-code || (echo "Schema drift detected" && exit 1)
+        working-directory: packages/api
+
+      # Seed with production-like data volume
+      - name: Seed test data
+        run: npx tsx src/database/seed.ts
+        working-directory: packages/api
+
+      # Measure migration performance
+      - name: Migration performance check
+        run: |
+          START=$(date +%s%N)
+          npx prisma migrate deploy
+          END=$(date +%s%N)
+          ELAPSED=$(( (END - START) / 1000000 ))
+          echo "Migration time: ${ELAPSED}ms"
+          if [ $ELAPSED -gt 30000 ]; then
+            echo "Migration exceeded 30s threshold"
+            exit 1
+          fi
+        working-directory: packages/api
+
+      # Rollback test — reset and re-apply to verify idempotency
+      - name: Rollback and re-apply
+        run: |
+          npx prisma migrate reset --force
+          npx prisma migrate deploy
+        working-directory: packages/api
+
+      - name: Run API tests against migrated DB
+        run: npm test -- --run
+        working-directory: packages/api

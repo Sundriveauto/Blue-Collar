@@ -1,34 +1,37 @@
-/**
- * Validation rules for authentication and user account endpoints.
- * Rules follow simple-body-validator syntax: 'rule1|rule2|...'.
- */
+import { z } from 'zod'
+import { emailField, passwordField, nameField, tokenField } from './shared.js'
 
 // POST /auth/register
-export const registerRules = {
-  email: 'required|email',
-  password: 'required|min:8',
-  firstName: 'required|string',
-  lastName: 'required|string',
-}
+export const registerRules = z.object({
+  email: emailField,
+  password: passwordField,
+  firstName: nameField,
+  lastName: nameField,
+})
 
 // POST /auth/login
-export const loginRules = {
-  email: 'required|email',
-  password: 'required',
-}
+export const loginRules = z.object({
+  email: emailField,
+  password: z.string().min(1),
+})
 
 // POST /auth/forgot-password
-export const forgotPasswordRules = {
-  email: 'required|email',
-}
+export const forgotPasswordRules = z.object({
+  email: emailField,
+})
 
-// PUT /auth/reset-password — token is the raw hex token from the reset email
-export const resetPasswordRules = {
-  token: 'required|string',
-  password: 'required|min:8',
-}
+// PUT /auth/reset-password
+export const resetPasswordRules = z.object({
+  token: tokenField,
+  password: passwordField,
+})
 
-// PUT /auth/verify-account — token is the signed JWT from the verification email
-export const verifyAccountRules = {
-  token: 'required|string',
-}
+// PUT /auth/verify-account
+export const verifyAccountRules = z.object({
+  token: tokenField,
+})
+
+// POST /auth/resend-verification
+export const resendVerificationRules = z.object({
+  email: emailField,
+})

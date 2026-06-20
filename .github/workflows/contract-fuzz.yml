@@ -1,0 +1,52 @@
+name: Contract Fuzz Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/contracts/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'packages/contracts/**'
+  schedule:
+    # Run nightly to catch regressions
+    - cron: '0 2 * * *'
+
+jobs:
+  fuzz:
+    name: Property-based Fuzz Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            packages/contracts/target
+          key: cargo-fuzz-${{ runner.os }}-${{ hashFiles('packages/contracts/Cargo.toml', 'packages/contracts/contracts/**/Cargo.toml') }}
+          restore-keys: |
+            cargo-fuzz-${{ runner.os }}-
+
+      - name: Run fuzz tests
+        run: cargo test -p bluecollar-fuzz -- --test-threads=4
+        working-directory: packages/contracts
+        env:
+          PROPTEST_CASES: 256
+
+      - name: Upload proptest failure cases
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: proptest-failures
+          path: packages/contracts/.proptest-regressions/
+          retention-days: 30

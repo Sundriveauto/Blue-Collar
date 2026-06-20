@@ -1,0 +1,28 @@
+# Helm values for cert-manager v1.14.5
+# helm install cert-manager jetstack/cert-manager \
+#   --namespace cert-manager --create-namespace \
+#   --version v1.14.5 --values this-file.yaml
+
+installCRDs: true
+
+replicaCount: 2
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+prometheus:
+  enabled: true
+  servicemonitor:
+    enabled: true
+    namespace: monitoring
+
+webhook:
+  replicaCount: 2
+
+cainjector:
+  replicaCount: 2

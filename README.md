@@ -2,6 +2,8 @@
 
 > Find Skilled Workers Near You
 
+**[English](./README.md) | [Português](./README.pt.md)**
+
 [![CI](https://github.com/Fidelis900/Blue-Collar/actions/workflows/ci.yml/badge.svg)](https://github.com/Fidelis900/Blue-Collar/actions/workflows/ci.yml)
 [![API Tests](https://github.com/Fidelis900/Blue-Collar/actions/workflows/api-tests.yml/badge.svg)](https://github.com/Fidelis900/Blue-Collar/actions/workflows/api-tests.yml)
 [![Node Version](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
@@ -28,6 +30,7 @@ Many skilled workers lack a platform to help them get noticed. Meanwhile, countl
 - [Getting Started](#getting-started)
 - [Environment Variables](#environment-variables)
 - [Production Deployment](#production-deployment)
+- [Status Page](#status-page)
 - [Roadmap](#roadmap)
 - [Community](#community)
 - [Contributing](#contributing)
@@ -36,6 +39,9 @@ Many skilled workers lack a platform to help them get noticed. Meanwhile, countl
 - [API Documentation](packages/api/DOCUMENTATION.json)
 - [API cURL Examples](packages/api/CURL_EXAMPLES.md)
 - [Security Policy](packages/api/SECURITY.md)
+- [Environment Variables](docs/ENVIRONMENT_VARIABLES.md)
+- [User Guide](docs/USER_GUIDE.md)
+- [Contract Integration Guide](docs/CONTRACT_INTEGRATION.md)
 - [Contributing Guide](CONTRIBUTING.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)
 - [Frontend Contributing Guide](packages/app/CONTRIBUTING.md)
@@ -241,6 +247,8 @@ Base URL: `http://localhost:3000/api`
 > Content-Type: multipart/form-data
 > X-HTTP-Method: PUT
 > ```
+>
+> See [DOCUMENTATION.json](packages/api/DOCUMENTATION.json) for detailed explanation of the method-override pattern, including client implementation examples and common mistakes to avoid.
 
 ### Admin
 
@@ -444,6 +452,15 @@ Use the production runbook in [docs/PRODUCTION_DEPLOYMENT.md](./docs/PRODUCTION_
 | 📋 Planned     | Mobile app (React Native)                           |
 
 ---
+
+## Status Page
+
+Check service health and uptime status at [status.bluecollar.app](https://status.bluecollar.app)
+
+We monitor critical endpoints every 60 seconds:
+- API health check (`/health`)
+- API readiness check (`/ready`)
+- Frontend application
 
 ## Community
 

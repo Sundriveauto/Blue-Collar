@@ -1,138 +1,340 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900" role="img" aria-labelledby="title desc">
+<!--
+  BlueCollar System Architecture Diagram
+  Last updated: 2026-05-30
+  Author: BlueCollar Contributors
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1160" viewBox="0 0 1600 1160" role="img" aria-labelledby="title desc">
   <title id="title">BlueCollar System Architecture</title>
-  <desc id="desc">Overview of frontend, API, PostgreSQL, Soroban contracts, Stellar network, and key operation flows.</desc>
+  <desc id="desc">Full system overview: CDN, Next.js App, Express API, Redis, PostgreSQL, Prometheus, Grafana, Loki, Stellar Network, Registry Contract, Market Contract, Escrow Contract, and labelled data-flow arrows.</desc>
+
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#f7fbff"/>
       <stop offset="100%" stop-color="#eef4ff"/>
     </linearGradient>
-    <linearGradient id="frontend" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="gFrontend" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#165dff"/>
       <stop offset="100%" stop-color="#0b3fb3"/>
     </linearGradient>
-    <linearGradient id="api" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="gApi" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#00875a"/>
       <stop offset="100%" stop-color="#046c4e"/>
     </linearGradient>
-    <linearGradient id="db" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="gDb" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#a855f7"/>
       <stop offset="100%" stop-color="#7e22ce"/>
     </linearGradient>
-    <linearGradient id="stellar" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="gStellar" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#f59e0b"/>
       <stop offset="100%" stop-color="#d97706"/>
     </linearGradient>
-    <linearGradient id="contract" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="gContract" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#0ea5e9"/>
       <stop offset="100%" stop-color="#0369a1"/>
     </linearGradient>
-    <marker id="arrowBlue" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto-start-reverse">
+    <linearGradient id="gRedis" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#dc2626"/>
+      <stop offset="100%" stop-color="#991b1b"/>
+    </linearGradient>
+    <linearGradient id="gCdn" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0891b2"/>
+      <stop offset="100%" stop-color="#0e7490"/>
+    </linearGradient>
+    <linearGradient id="gMonitor" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#e85d04"/>
+      <stop offset="100%" stop-color="#9c2c00"/>
+    </linearGradient>
+
+    <!-- Arrow markers -->
+    <marker id="aBlue" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#1d4ed8"/>
     </marker>
-    <marker id="arrowGreen" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto-start-reverse">
+    <marker id="aGreen" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#047857"/>
     </marker>
-    <marker id="arrowAmber" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto-start-reverse">
+    <marker id="aAmber" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#b45309"/>
     </marker>
+    <marker id="aRed" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#dc2626"/>
+    </marker>
+    <marker id="aCyan" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#0891b2"/>
+    </marker>
+    <marker id="aOrange" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#e85d04"/>
+    </marker>
+
     <style>
-      .label { font: 600 18px 'Segoe UI', Tahoma, sans-serif; fill: #0f172a; }
-      .small { font: 500 14px 'Segoe UI', Tahoma, sans-serif; fill: #1e293b; }
-      .tiny { font: 500 12px 'Segoe UI', Tahoma, sans-serif; fill: #334155; }
-      .box-title { font: 700 20px 'Segoe UI', Tahoma, sans-serif; fill: #ffffff; }
-      .box-sub { font: 500 13px 'Segoe UI', Tahoma, sans-serif; fill: #e2e8f0; }
-      .flow-title { font: 700 16px 'Segoe UI', Tahoma, sans-serif; fill: #0f172a; }
-      .legend { font: 600 13px 'Segoe UI', Tahoma, sans-serif; fill: #0f172a; }
+      .label   { font: 600 16px 'Segoe UI', Tahoma, sans-serif; fill: #0f172a; }
+      .small   { font: 500 13px 'Segoe UI', Tahoma, sans-serif; fill: #1e293b; }
+      .tiny    { font: 500 11px 'Segoe UI', Tahoma, sans-serif; fill: #334155; }
+      .bTitle  { font: 700 18px 'Segoe UI', Tahoma, sans-serif; fill: #ffffff; }
+      .bSub    { font: 500 12px 'Segoe UI', Tahoma, sans-serif; fill: #e2e8f0; }
+      .fTitle  { font: 700 15px 'Segoe UI', Tahoma, sans-serif; fill: #0f172a; }
+      .legend  { font: 600 12px 'Segoe UI', Tahoma, sans-serif; fill: #0f172a; }
+      .meta    { font: 400 11px 'Segoe UI', Tahoma, sans-serif; fill: #64748b; }
+      .arrowLbl{ font: 600 10px 'Segoe UI', Tahoma, sans-serif; fill: #0f172a; }
     </style>
   </defs>
 
-  <rect x="0" y="0" width="1400" height="900" fill="url(#bg)"/>
-  <text x="50" y="58" style="font: 800 34px 'Segoe UI', Tahoma, sans-serif; fill: #0f172a;">BlueCollar Architecture Overview</text>
-  <text x="50" y="86" class="small">Next.js frontend, Express API, PostgreSQL, Soroban contracts, Stellar network, and operational data flows</text>
+  <!-- Background -->
+  <rect x="0" y="0" width="1600" height="1160" fill="url(#bg)"/>
 
-  <rect x="50" y="130" width="250" height="120" rx="16" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
-  <text x="78" y="170" class="label">Users</text>
-  <text x="78" y="195" class="small">Clients and Curators</text>
-  <text x="78" y="218" class="tiny">Browser + Wallet Actions</text>
+  <!-- Title -->
+  <text x="50" y="52" style="font: 800 30px 'Segoe UI', Tahoma, sans-serif; fill: #0f172a;">BlueCollar Architecture Overview</text>
+  <text x="50" y="76" class="small">CDN · Next.js · Express API · Redis · PostgreSQL · Prometheus · Grafana · Loki · Stellar / Soroban</text>
+  <text x="50" y="96" class="meta">Last updated: 2026-05-30 · Author: BlueCollar Contributors</text>
 
-  <rect x="380" y="120" width="290" height="150" rx="20" fill="url(#frontend)"/>
-  <text x="410" y="170" class="box-title">Next.js App</text>
-  <text x="410" y="198" class="box-sub">packages/app</text>
-  <text x="410" y="220" class="box-sub">UI, Auth screens, Worker discovery</text>
-  <text x="410" y="242" class="box-sub">Freighter wallet integration</text>
+  <!-- ═══════════════════════════════════════════════════════════
+       ROW 1 — Client tier
+  ═══════════════════════════════════════════════════════════ -->
 
-  <rect x="760" y="120" width="310" height="150" rx="20" fill="url(#api)"/>
-  <text x="790" y="170" class="box-title">Express API</text>
-  <text x="790" y="198" class="box-sub">packages/api</text>
-  <text x="790" y="220" class="box-sub">Auth, Workers, Payments, Admin</text>
-  <text x="790" y="242" class="box-sub">Prisma + Business logic</text>
+  <!-- Users box -->
+  <rect x="50" y="130" width="200" height="100" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="75" y="168" class="label">Users</text>
+  <text x="75" y="190" class="small">Clients &amp; Curators</text>
+  <text x="75" y="210" class="tiny">Browser + Wallet</text>
 
-  <rect x="1100" y="120" width="250" height="150" rx="20" fill="url(#db)"/>
-  <text x="1130" y="170" class="box-title">PostgreSQL</text>
-  <text x="1130" y="198" class="box-sub">Worker, User, Category</text>
-  <text x="1130" y="220" class="box-sub">Reviews, Bookmarks, Contact</text>
+  <!-- CDN -->
+  <rect x="310" y="120" width="220" height="120" rx="18" fill="url(#gCdn)"/>
+  <text x="338" y="162" class="bTitle">CDN</text>
+  <text x="338" y="184" class="bSub">Static assets, images</text>
+  <text x="338" y="204" class="bSub">Edge cache (CloudFront/</text>
+  <text x="338" y="222" class="bSub">Cloudflare)</text>
 
-  <rect x="820" y="340" width="250" height="120" rx="18" fill="url(#contract)"/>
-  <text x="846" y="385" class="box-title">Registry Contract</text>
-  <text x="846" y="411" class="box-sub">Worker registration</text>
-  <text x="846" y="432" class="box-sub">Hashes: location/contact</text>
+  <!-- Next.js App -->
+  <rect x="600" y="120" width="260" height="120" rx="18" fill="url(#gFrontend)"/>
+  <text x="628" y="162" class="bTitle">Next.js App</text>
+  <text x="628" y="184" class="bSub">packages/app</text>
+  <text x="628" y="204" class="bSub">UI · Auth · Worker discovery</text>
+  <text x="628" y="222" class="bSub">Freighter wallet integration</text>
 
-  <rect x="1110" y="340" width="240" height="120" rx="18" fill="url(#contract)"/>
-  <text x="1135" y="385" class="box-title">Market Contract</text>
-  <text x="1135" y="411" class="box-sub">Tips + Escrow</text>
-  <text x="1135" y="432" class="box-sub">Fee and settlement</text>
+  <!-- ═══════════════════════════════════════════════════════════
+       ROW 2 — API tier
+  ═══════════════════════════════════════════════════════════ -->
 
-  <rect x="790" y="510" width="560" height="130" rx="20" fill="url(#stellar)"/>
-  <text x="820" y="560" class="box-title">Stellar Network (Soroban)</text>
-  <text x="820" y="586" class="box-sub">Transaction execution, ledger state, event stream</text>
-  <text x="820" y="610" class="box-sub">Wallet signing and on-chain verification</text>
+  <!-- Express API -->
+  <rect x="600" y="310" width="260" height="130" rx="18" fill="url(#gApi)"/>
+  <text x="628" y="352" class="bTitle">Express API</text>
+  <text x="628" y="374" class="bSub">packages/api</text>
+  <text x="628" y="394" class="bSub">Auth · Workers · Payments</text>
+  <text x="628" y="414" class="bSub">Prisma · Business logic</text>
 
-  <rect x="380" y="340" width="290" height="120" rx="18" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
-  <text x="408" y="382" class="label">Freighter Wallet</text>
-  <text x="408" y="406" class="small">Connect + Sign Tx</text>
-  <text x="408" y="428" class="tiny">Used by frontend for contract ops</text>
+  <!-- Redis -->
+  <rect x="940" y="310" width="200" height="130" rx="18" fill="url(#gRedis)"/>
+  <text x="968" y="352" class="bTitle">Redis</text>
+  <text x="968" y="374" class="bSub">Rate limiting</text>
+  <text x="968" y="394" class="bSub">Session / idempotency</text>
+  <text x="968" y="414" class="bSub">Response cache</text>
 
-  <line x1="300" y1="190" x2="380" y2="190" stroke="#1d4ed8" stroke-width="4" marker-end="url(#arrowBlue)"/>
-  <text x="312" y="176" class="tiny">HTTPS</text>
+  <!-- PostgreSQL -->
+  <rect x="1220" y="310" width="220" height="130" rx="18" fill="url(#gDb)"/>
+  <text x="1248" y="352" class="bTitle">PostgreSQL</text>
+  <text x="1248" y="374" class="bSub">User · Worker · Category</text>
+  <text x="1248" y="394" class="bSub">Reviews · Bookmarks</text>
+  <text x="1248" y="414" class="bSub">Jobs · Disputes</text>
 
-  <line x1="670" y1="190" x2="760" y2="190" stroke="#1d4ed8" stroke-width="4" marker-end="url(#arrowBlue)"/>
-  <text x="685" y="176" class="tiny">REST/JSON</text>
+  <!-- ═══════════════════════════════════════════════════════════
+       ROW 3 — Blockchain tier
+  ═══════════════════════════════════════════════════════════ -->
 
-  <line x1="1070" y1="190" x2="1100" y2="190" stroke="#047857" stroke-width="4" marker-end="url(#arrowGreen)"/>
-  <text x="1042" y="175" class="tiny">Prisma</text>
+  <!-- Registry Contract -->
+  <rect x="440" y="530" width="220" height="110" rx="16" fill="url(#gContract)"/>
+  <text x="466" y="570" class="bTitle">Registry Contract</text>
+  <text x="466" y="592" class="bSub">Worker registration</text>
+  <text x="466" y="612" class="bSub">Location/contact hashes</text>
 
-  <line x1="915" y1="270" x2="915" y2="340" stroke="#b45309" stroke-width="4" marker-end="url(#arrowAmber)"/>
-  <text x="925" y="312" class="tiny">Invoke</text>
+  <!-- Market Contract -->
+  <rect x="720" y="530" width="220" height="110" rx="16" fill="url(#gContract)"/>
+  <text x="748" y="570" class="bTitle">Market Contract</text>
+  <text x="748" y="592" class="bSub">Tips + direct payments</text>
+  <text x="748" y="612" class="bSub">Fee &amp; settlement</text>
 
-  <line x1="1200" y1="270" x2="1230" y2="340" stroke="#b45309" stroke-width="4" marker-end="url(#arrowAmber)"/>
-  <text x="1210" y="312" class="tiny">Invoke</text>
+  <!-- Escrow Contract -->
+  <rect x="1000" y="530" width="220" height="110" rx="16" fill="url(#gContract)"/>
+  <text x="1028" y="570" class="bTitle">Escrow Contract</text>
+  <text x="1028" y="592" class="bSub">Time-locked payments</text>
+  <text x="1028" y="612" class="bSub">Dispute resolution</text>
 
-  <line x1="670" y1="380" x2="820" y2="380" stroke="#1d4ed8" stroke-width="4" marker-end="url(#arrowBlue)"/>
-  <text x="700" y="365" class="tiny">Signed tx payload</text>
+  <!-- Stellar Network -->
+  <rect x="380" y="710" width="900" height="110" rx="20" fill="url(#gStellar)"/>
+  <text x="420" y="754" class="bTitle">Stellar Network (Soroban)</text>
+  <text x="420" y="778" class="bSub">Transaction execution · Ledger state · Event stream (Horizon API)</text>
+  <text x="420" y="798" class="bSub">Wallet signing · On-chain verification · TTL-managed persistent storage</text>
 
-  <line x1="945" y1="460" x2="945" y2="510" stroke="#b45309" stroke-width="4" marker-end="url(#arrowAmber)"/>
-  <line x1="1230" y1="460" x2="1230" y2="510" stroke="#b45309" stroke-width="4" marker-end="url(#arrowAmber)"/>
+  <!-- ═══════════════════════════════════════════════════════════
+       ROW 4 — Monitoring tier
+  ═══════════════════════════════════════════════════════════ -->
 
-  <rect x="50" y="520" width="700" height="320" rx="20" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
-  <text x="80" y="560" class="flow-title">Key Operation Data Flows</text>
+  <!-- Monitoring group background -->
+  <rect x="50" y="700" width="290" height="160" rx="16" fill="#fff7ed" stroke="#fed7aa" stroke-width="2"/>
+  <text x="78" y="728" class="fTitle">Monitoring Stack</text>
 
-  <text x="80" y="600" class="label">1) Registration Flow</text>
-  <text x="80" y="624" class="small">User/Curator -> Next.js -> API -> PostgreSQL (user/worker records)</text>
-  <text x="80" y="646" class="small">Curator registration on-chain -> Registry Contract -> Stellar ledger event</text>
+  <!-- Prometheus -->
+  <rect x="66" y="738" width="80" height="60" rx="10" fill="url(#gMonitor)"/>
+  <text x="76" y="762" class="bSub" style="font-size:11px;">Prometheus</text>
+  <text x="76" y="778" class="bSub" style="font-size:10px;">Metrics scrape</text>
 
-  <text x="80" y="690" class="label">2) Payment / Escrow Flow</text>
-  <text x="80" y="714" class="small">Frontend requests payment -> wallet signs -> API validates -> Market Contract</text>
-  <text x="80" y="736" class="small">Market executes tip/escrow -> settlement events consumed by app/backend</text>
+  <!-- Grafana -->
+  <rect x="162" y="738" width="80" height="60" rx="10" fill="url(#gMonitor)"/>
+  <text x="172" y="762" class="bSub" style="font-size:11px;">Grafana</text>
+  <text x="172" y="778" class="bSub" style="font-size:10px;">Dashboards</text>
 
-  <text x="80" y="780" class="label">3) Worker Discovery Flow</text>
-  <text x="80" y="804" class="small">Frontend fetches paginated workers from API with filters (category, city, search)</text>
+  <!-- Loki -->
+  <rect x="258" y="738" width="68" height="60" rx="10" fill="url(#gMonitor)"/>
+  <text x="268" y="762" class="bSub" style="font-size:11px;">Loki</text>
+  <text x="268" y="778" class="bSub" style="font-size:10px;">Log agg.</text>
 
-  <rect x="790" y="680" width="560" height="160" rx="20" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
-  <text x="820" y="718" class="flow-title">Legend</text>
-  <line x1="820" y1="744" x2="900" y2="744" stroke="#1d4ed8" stroke-width="4" marker-end="url(#arrowBlue)"/>
-  <text x="914" y="749" class="legend">Web/API traffic and app-level calls</text>
-  <line x1="820" y1="774" x2="900" y2="774" stroke="#047857" stroke-width="4" marker-end="url(#arrowGreen)"/>
-  <text x="914" y="779" class="legend">Database queries</text>
-  <line x1="820" y1="804" x2="900" y2="804" stroke="#b45309" stroke-width="4" marker-end="url(#arrowAmber)"/>
-  <text x="914" y="809" class="legend">On-chain contract invocation</text>
+  <!-- ═══════════════════════════════════════════════════════════
+       ARROWS — Row 1
+  ═══════════════════════════════════════════════════════════ -->
+
+  <!-- Users → CDN (HTTPS) -->
+  <line x1="250" y1="180" x2="308" y2="180" stroke="#0891b2" stroke-width="3" marker-end="url(#aCyan)"/>
+  <text x="255" y="170" class="arrowLbl">HTTPS</text>
+
+  <!-- CDN → Next.js (cached assets) -->
+  <line x1="530" y1="180" x2="598" y2="180" stroke="#0891b2" stroke-width="3" marker-end="url(#aCyan)"/>
+  <text x="535" y="170" class="arrowLbl">cached assets</text>
+
+  <!-- Users → Next.js (direct HTTPS, bypassing CDN for dynamic) -->
+  <path d="M150,230 Q150,280 600,280 L600,240" stroke="#1d4ed8" stroke-width="2" stroke-dasharray="6,3" fill="none" marker-end="url(#aBlue)"/>
+  <text x="300" y="275" class="arrowLbl">HTTPS (dynamic)</text>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       ARROWS — Row 1 → Row 2
+  ═══════════════════════════════════════════════════════════ -->
+
+  <!-- Next.js → API (REST/JSON) -->
+  <line x1="730" y1="240" x2="730" y2="308" stroke="#1d4ed8" stroke-width="3" marker-end="url(#aBlue)"/>
+  <text x="736" y="280" class="arrowLbl">REST / JSON</text>
+
+  <!-- Next.js → API (SSE) -->
+  <line x1="710" y1="240" x2="710" y2="308" stroke="#1d4ed8" stroke-width="2" stroke-dasharray="5,3" fill="none" marker-end="url(#aBlue)"/>
+  <text x="640" y="280" class="arrowLbl">SSE (events)</text>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       ARROWS — Row 2 internal
+  ═══════════════════════════════════════════════════════════ -->
+
+  <!-- API → Redis -->
+  <line x1="860" y1="375" x2="938" y2="375" stroke="#dc2626" stroke-width="3" marker-end="url(#aRed)"/>
+  <text x="870" y="365" class="arrowLbl">cache / rate-limit</text>
+
+  <!-- API → PostgreSQL -->
+  <line x1="1140" y1="375" x2="1218" y2="375" stroke="#047857" stroke-width="3" marker-end="url(#aGreen)"/>
+  <text x="1148" y="365" class="arrowLbl">Prisma ORM</text>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       ARROWS — Row 2 → Row 3 (contract calls)
+  ═══════════════════════════════════════════════════════════ -->
+
+  <!-- API → Registry Contract -->
+  <path d="M660,440 L660,480 L550,480 L550,528" stroke="#b45309" stroke-width="3" fill="none" marker-end="url(#aAmber)"/>
+  <text x="560" y="476" class="arrowLbl">contract call</text>
+
+  <!-- API → Market Contract -->
+  <line x1="730" y1="440" x2="830" y2="528" stroke="#b45309" stroke-width="3" fill="none" marker-end="url(#aAmber)"/>
+  <text x="748" y="498" class="arrowLbl">contract call</text>
+
+  <!-- API → Escrow Contract -->
+  <path d="M800,440 L800,480 L1110,480 L1110,528" stroke="#b45309" stroke-width="3" fill="none" marker-end="url(#aAmber)"/>
+  <text x="900" y="476" class="arrowLbl">escrow invoke</text>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       ARROWS — Row 3 → Stellar
+  ═══════════════════════════════════════════════════════════ -->
+
+  <!-- Registry → Stellar -->
+  <line x1="550" y1="640" x2="550" y2="708" stroke="#b45309" stroke-width="3" marker-end="url(#aAmber)"/>
+
+  <!-- Market → Stellar -->
+  <line x1="830" y1="640" x2="830" y2="708" stroke="#b45309" stroke-width="3" marker-end="url(#aAmber)"/>
+
+  <!-- Escrow → Stellar -->
+  <line x1="1110" y1="640" x2="1110" y2="708" stroke="#b45309" stroke-width="3" marker-end="url(#aAmber)"/>
+
+  <!-- Stellar → API (Horizon API / event polling) -->
+  <path d="M1280,710 L1280,660 L1540,660 L1540,375 L1462,375" stroke="#f59e0b" stroke-width="3" stroke-dasharray="7,3" fill="none" marker-end="url(#aAmber)"/>
+  <text x="1490" y="650" class="arrowLbl">Horizon API</text>
+  <text x="1490" y="662" class="arrowLbl">(event poll)</text>
+
+  <!-- Next.js → Stellar (wallet signing) -->
+  <path d="M860,240 Q1560,240 1560,765 L1282,765" stroke="#f59e0b" stroke-width="2" stroke-dasharray="5,3" fill="none" marker-end="url(#aAmber)"/>
+  <text x="1380" y="234" class="arrowLbl">wallet sign (Freighter)</text>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       ARROWS — Monitoring
+  ═══════════════════════════════════════════════════════════ -->
+
+  <!-- API → Prometheus (metrics scrape) -->
+  <path d="M600,440 L600,460 L106,460 L106,736" stroke="#e85d04" stroke-width="2" stroke-dasharray="5,3" fill="none" marker-end="url(#aOrange)"/>
+  <text x="200" y="456" class="arrowLbl">metrics scrape (/metrics)</text>
+
+  <!-- API → Loki (logs) -->
+  <path d="M610,440 L610,470 L292,470 L292,736" stroke="#e85d04" stroke-width="2" stroke-dasharray="5,3" fill="none" marker-end="url(#aOrange)"/>
+  <text x="300" y="466" class="arrowLbl">logs (Pino/Loki)</text>
+
+  <!-- Prometheus → Grafana (data source) -->
+  <line x1="146" y1="768" x2="160" y2="768" stroke="#e85d04" stroke-width="2" marker-end="url(#aOrange)"/>
+
+  <!-- Loki → Grafana (data source) -->
+  <line x1="258" y1="768" x2="244" y2="768" stroke="#e85d04" stroke-width="2" marker-end="url(#aOrange)"/>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       KEY FLOWS panel
+  ═══════════════════════════════════════════════════════════ -->
+  <rect x="50" y="890" width="1500" height="240" rx="18" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="80" y="924" class="fTitle">Key Operation Data Flows</text>
+
+  <!-- Flow 1 -->
+  <text x="80" y="958" class="label">1) Registration</text>
+  <text x="80" y="978" class="small">User/Curator → Next.js → REST → API → Prisma → PostgreSQL (user/worker records)</text>
+  <text x="80" y="996" class="small">Curator on-chain → API → Registry Contract → Stellar ledger (immutable proof)</text>
+
+  <!-- Flow 2 -->
+  <text x="80" y="1030" class="label">2) Payment / Escrow</text>
+  <text x="80" y="1050" class="small">Frontend requests payment → Freighter signs tx → API validates → Market or Escrow Contract</text>
+  <text x="80" y="1068" class="small">Contract executes → settlement events polled via Horizon API → API updates PostgreSQL</text>
+
+  <!-- Flow 3 -->
+  <text x="80" y="1102" class="label">3) Worker Discovery</text>
+  <text x="80" y="1122" class="small">Browser → CDN (static/images) + Next.js → REST → API → Redis (cache hit?) → PostgreSQL</text>
+
+  <!-- Flow 4 -->
+  <text x="760" y="958" class="label">4) Real-time Events</text>
+  <text x="760" y="978" class="small">API emits SSE stream → Next.js subscribes → live worker status / payment updates</text>
+
+  <!-- Flow 5 -->
+  <text x="760" y="1030" class="label">5) Observability</text>
+  <text x="760" y="1050" class="small">API exposes /metrics → Prometheus scrapes → Grafana dashboards</text>
+  <text x="760" y="1068" class="small">API logs (Pino) → Loki → Grafana log explorer</text>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       LEGEND
+  ═══════════════════════════════════════════════════════════ -->
+  <rect x="1200" y="890" width="350" height="240" rx="16" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="1224" y="920" class="fTitle">Legend</text>
+
+  <line x1="1224" y1="944" x2="1290" y2="944" stroke="#1d4ed8" stroke-width="3" marker-end="url(#aBlue)"/>
+  <text x="1300" y="949" class="legend">REST / HTTPS / SSE</text>
+
+  <line x1="1224" y1="974" x2="1290" y2="974" stroke="#047857" stroke-width="3" marker-end="url(#aGreen)"/>
+  <text x="1300" y="979" class="legend">Database (Prisma ORM)</text>
+
+  <line x1="1224" y1="1004" x2="1290" y2="1004" stroke="#b45309" stroke-width="3" marker-end="url(#aAmber)"/>
+  <text x="1300" y="1009" class="legend">Contract invocation / Stellar</text>
+
+  <line x1="1224" y1="1034" x2="1290" y2="1034" stroke="#dc2626" stroke-width="3" marker-end="url(#aRed)"/>
+  <text x="1300" y="1039" class="legend">Redis cache / rate-limit</text>
+
+  <line x1="1224" y1="1064" x2="1290" y2="1064" stroke="#0891b2" stroke-width="3" marker-end="url(#aCyan)"/>
+  <text x="1300" y="1069" class="legend">CDN / edge cache</text>
+
+  <line x1="1224" y1="1094" x2="1290" y2="1094" stroke="#e85d04" stroke-width="3" marker-end="url(#aOrange)"/>
+  <text x="1300" y="1099" class="legend">Metrics / logs (observability)</text>
+
+  <line x1="1224" y1="1114" x2="1290" y2="1114" stroke="#94a3b8" stroke-width="2" stroke-dasharray="5,3" marker-end="url(#aBlue)"/>
+  <text x="1300" y="1119" class="legend">Dashed = async / optional path</text>
 </svg>

@@ -34,11 +34,15 @@ import {
   BarChart3,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { useWallet } from "@/hooks/useWallet";
 import { cn } from "@/lib/utils";
+import FriendbotBanner from "@/components/FriendbotBanner";
 import { DashboardTableSkeleton } from "@/components/Skeleton";
 import type { CuratorAnalytics, ViewTrend } from "@/types";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000/api";
+const HORIZON_TESTNET = "https://horizon-testnet.stellar.org";
+const IS_STELLAR_TESTNET = process.env.NEXT_PUBLIC_STELLAR_NETWORK?.toLowerCase() === "testnet";
 
 interface DashboardWorker {
   id: string;
@@ -50,11 +54,13 @@ interface DashboardWorker {
 
 export default function DashboardPage() {
   const { user, token, isLoading: authLoading } = useAuth();
+  const { publicKey } = useWallet();
   const router = useRouter();
 
   const [workers, setWorkers] = useState<DashboardWorker[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [xlmBalance, setXlmBalance] = useState<number | null>(null);
 
   // Analytics state
   const [analytics, setAnalytics] = useState<CuratorAnalytics | null>(null);
@@ -134,6 +140,27 @@ export default function DashboardPage() {
     }
   }, [authLoading, token, fetchWorkers, fetchAnalytics]);
 
+  useEffect(() => {
+    if (!IS_STELLAR_TESTNET || !publicKey) {
+      setXlmBalance(null);
+      return;
+    }
+
+    fetch(`${HORIZON_TESTNET}/accounts/${publicKey}`)
+      .then((res) => {
+        if (res.status === 404) return null;
+        if (!res.ok) throw new Error("Failed to load wallet balance");
+        return res.json();
+      })
+      .then((account) => {
+        const nativeBalance = account?.balances?.find(
+          (balance: { asset_type: string }) => balance.asset_type === "native"
+        );
+        setXlmBalance(nativeBalance ? Number(nativeBalance.balance) : 0);
+      })
+      .catch(() => setXlmBalance(null));
+  }, [publicKey]);
+
   // ── Toggle active/inactive (optimistic) ──────────────────────────────────
   const handleToggle = async (worker: DashboardWorker) => {
     setWorkers((prev: DashboardWorker[]) =>
@@ -195,6 +222,10 @@ export default function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
+      {publicKey && xlmBalance !== null && (
+        <FriendbotBanner walletAddress={publicKey} xlmBalance={xlmBalance} />
+      )}
+
       {/* Header */}
       <div className="mb-8 flex items-center justify-between">
         <div>

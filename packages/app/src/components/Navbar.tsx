@@ -64,7 +64,7 @@ function ThemeToggle({ className }: { className?: string }) {
 
 export default function Navbar() {
   const { user, logout } = useAuth();
-  const { address, connecting, connect } = useWallet();
+  const { publicKey, network, isConnecting, connect, disconnect } = useWallet();
   const router = useRouter();
   const locale = useLocale();
   const pathname = usePathname();
@@ -85,7 +85,7 @@ export default function Navbar() {
     touchStartX.current = null;
   };
 
-  const shortAddress = address ? `${address.slice(0, 4)}…${address.slice(-4)}` : null;
+  const shortAddress = publicKey ? `${publicKey.slice(0, 4)}…${publicKey.slice(-4)}` : null;
 
   const handleLanguageChange = (newLocale: string) => {
     router.push(pathname.replace(`/${locale}`, `/${newLocale}`));
@@ -131,10 +131,41 @@ export default function Navbar() {
             </DropdownMenu.Root>
 
             {/* Wallet */}
-            <button onClick={connect} disabled={connecting} className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800 dark:text-gray-200">
-              <Wallet size={15} />
-              {shortAddress ?? (connecting ? "Connecting…" : "Connect Wallet")}
-            </button>
+            {publicKey ? (
+              <DropdownMenu.Root>
+                <DropdownMenu.Trigger asChild>
+                  <button className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800 dark:text-gray-200">
+                    <Wallet size={15} />
+                    {shortAddress}
+                    {network && (
+                      <span className={cn(
+                        "rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase",
+                        network.toLowerCase().includes("test")
+                          ? "bg-yellow-100 text-yellow-700"
+                          : "bg-green-100 text-green-700"
+                      )}>
+                        {network.toLowerCase().includes("test") ? "testnet" : "mainnet"}
+                      </span>
+                    )}
+                    <ChevronDown size={13} />
+                  </button>
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content align="end" sideOffset={6} className="z-50 min-w-[180px] rounded-md border bg-white p-1 shadow-md text-sm dark:bg-gray-900 dark:border-gray-700">
+                    <div className="px-3 py-2 text-xs text-gray-400 font-mono break-all">{publicKey}</div>
+                    <DropdownMenu.Separator className="my-1 h-px bg-gray-100 dark:bg-gray-700" />
+                    <DropdownMenu.Item onSelect={disconnect} className="cursor-pointer rounded px-3 py-2 text-red-600 hover:bg-red-50 outline-none dark:hover:bg-red-950">
+                      Disconnect Wallet
+                    </DropdownMenu.Item>
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu.Root>
+            ) : (
+              <button onClick={connect} disabled={isConnecting} className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800 dark:text-gray-200">
+                <Wallet size={15} />
+                {isConnecting ? "Connecting…" : "Connect Wallet"}
+              </button>
+            )}
 
             {/* Auth */}
             {user ? (
@@ -254,14 +285,39 @@ export default function Navbar() {
               <div className="my-2 h-px bg-gray-100 dark:bg-gray-800" />
 
               {/* Wallet */}
-              <button
-                onClick={() => { connect(); setMobileOpen(false); }}
-                disabled={connecting}
-                className="flex items-center gap-3 rounded-lg border px-4 py-3 text-sm font-medium min-h-[48px] hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800 dark:text-gray-200 transition-colors"
-              >
-                <Wallet size={16} />
-                {shortAddress ?? (connecting ? "Connecting…" : "Connect Wallet")}
-              </button>
+              {publicKey ? (
+                <>
+                  <div className="flex items-center gap-3 rounded-lg border px-4 py-3 text-sm min-h-[48px] dark:border-gray-700 dark:text-gray-200">
+                    <Wallet size={16} />
+                    <span className="flex-1 font-mono text-xs truncate">{shortAddress}</span>
+                    {network && (
+                      <span className={cn(
+                        "rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase",
+                        network.toLowerCase().includes("test")
+                          ? "bg-yellow-100 text-yellow-700"
+                          : "bg-green-100 text-green-700"
+                      )}>
+                        {network.toLowerCase().includes("test") ? "testnet" : "mainnet"}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => { disconnect(); setMobileOpen(false); }}
+                    className="flex items-center gap-3 rounded-lg px-4 py-3 text-sm min-h-[48px] text-red-600 hover:bg-red-50 dark:hover:bg-red-950 transition-colors w-full text-left"
+                  >
+                    Disconnect Wallet
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => { connect(); setMobileOpen(false); }}
+                  disabled={isConnecting}
+                  className="flex items-center gap-3 rounded-lg border px-4 py-3 text-sm font-medium min-h-[48px] hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800 dark:text-gray-200 transition-colors"
+                >
+                  <Wallet size={16} />
+                  {isConnecting ? "Connecting…" : "Connect Wallet"}
+                </button>
+              )}
 
               <div className="my-2 h-px bg-gray-100 dark:bg-gray-800" />
 

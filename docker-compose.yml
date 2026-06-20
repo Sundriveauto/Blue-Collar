@@ -10,6 +10,24 @@ services:
       - "5432:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bluecollar -d bluecollar"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   api:
     build:
@@ -17,14 +35,24 @@ services:
       dockerfile: packages/api/Dockerfile
     restart: unless-stopped
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     ports:
       - "3000:3000"
     environment:
       DATABASE_URL: postgresql://bluecollar:bluecollar@db:5432/bluecollar
+      REDIS_URL: redis://redis:6379
       NODE_ENV: production
     env_file:
       - packages/api/.env
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   adminer:
     image: adminer:latest
@@ -34,5 +62,40 @@ services:
     ports:
       - "8080:8080"
 
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.96.0
+    restart: unless-stopped
+    command: ["--config=/etc/otel-collector-config.yml"]
+    volumes:
+      - ./deploy/otel/otel-collector-config.yml:/etc/otel-collector-config.yml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "8888:8888"   # Collector metrics
+
+  loki:
+    image: grafana/loki:2.9.4
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki.yml
+    volumes:
+      - ./deploy/loki/loki.yml:/etc/loki/loki.yml:ro
+      - ./deploy/loki/alerts.yml:/etc/loki/rules/fake/alerts.yml:ro
+      - loki_data:/loki
+    ports:
+      - "3100:3100"
+
+  promtail:
+    image: grafana/promtail:2.9.4
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/promtail.yml
+    volumes:
+      - ./deploy/promtail/promtail.yml:/etc/promtail/promtail.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+
 volumes:
   db_data:
+  redis_data:
+  loki_data:

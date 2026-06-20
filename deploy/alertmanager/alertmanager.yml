@@ -1,6 +1,7 @@
 global:
   resolve_timeout: 5m
   slack_api_url: '${SLACK_WEBHOOK_URL}'
+  pagerduty_url: 'https://events.pagerduty.com/v2/enqueue'
 
 route:
   receiver: 'default'
@@ -13,9 +14,15 @@ route:
         severity: critical
       receiver: 'critical'
       continue: true
+      group_wait: 0s
+      repeat_interval: 1h
     - match:
         severity: warning
       receiver: 'warning'
+    - match:
+        alertname: SLAViolation
+      receiver: 'sla'
+      repeat_interval: 1h
 
 receivers:
   - name: 'default'
@@ -23,15 +30,60 @@ receivers:
       - channel: '#alerts'
         title: 'Alert: {{ .GroupLabels.alertname }}'
         text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+        send_resolved: true
 
   - name: 'critical'
     slack_configs:
       - channel: '#critical-alerts'
-        title: 'CRITICAL: {{ .GroupLabels.alertname }}'
+        title: ':fire: CRITICAL: {{ .GroupLabels.alertname }}'
         text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+        send_resolved: true
+    pagerduty_configs:
+      - service_key: '${PAGERDUTY_SERVICE_KEY}'
+        description: '{{ .GroupLabels.alertname }}'
+        details:
+          firing: '{{ template "pagerduty.default.instances" .Alerts.Firing }}'
+    email_configs:
+      - to: '${ALERT_EMAIL_CRITICAL}'
+        from: 'alerting@bluecollar.app'
+        smarthost: '${SMTP_HOST}:{{ .ExternalURL | parseURL | .Port | default 587 }}'
+        auth_username: '${SMTP_USER}'
+        auth_password: '${SMTP_PASS}'
+        headers:
+          Subject: '[CRITICAL] {{ .GroupLabels.alertname }}'
 
   - name: 'warning'
     slack_configs:
       - channel: '#warnings'
-        title: 'Warning: {{ .GroupLabels.alertname }}'
+        title: ':warning: {{ .GroupLabels.alertname }}'
         text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+        send_resolved: true
+
+  - name: 'sla'
+    email_configs:
+      - to: '${ALERT_EMAIL_SLA}'
+        from: 'alerting@bluecollar.app'
+        smarthost: '${SMTP_HOST}:587'
+        auth_username: '${SMTP_USER}'
+        auth_password: '${SMTP_PASS}'
+        headers:
+          Subject: '[SLA VIOLATION] {{ .GroupLabels.alertname }}'
+    slack_configs:
+      - channel: '#sla-violations'
+        title: ':rotating_light: SLA VIOLATION'
+        text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+
+inhibit_rules:
+  # Inhibit warnings if critical is already firing
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'instance']
+
+  # Inhibit APIDown warning if database is down
+  - source_match:
+      alertname: 'DatabaseDown'
+    target_match:
+      alertname: 'APIDown'
+    equal: ['cluster']

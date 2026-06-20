@@ -1,0 +1,47 @@
+groups:
+  - name: bluecollar_business_metrics
+    interval: 1m
+    rules:
+      # Worker Registration Metrics
+      - record: bluecollar:worker:registrations:rate
+        expr: rate(bluecollar_worker_registrations_total[1h])
+
+      - record: bluecollar:worker:active:total
+        expr: bluecollar_workers_active
+
+      - record: bluecollar:worker:by_category:ratio
+        expr: bluecollar_workers_total{category != ""} / on() group_left() clamp_min(bluecollar_workers_total, 1)
+
+      # Payment & Tip Metrics
+      - record: bluecollar:tips:total_value:usd
+        expr: bluecollar_tips_value_usd_total
+
+      - record: bluecollar:tips:rate
+        expr: rate(bluecollar_tips_total[1h])
+
+      - record: bluecollar:tips:average_value
+        expr: bluecollar_tips_value_usd_total / clamp_min(bluecollar_tips_total, 1)
+
+      # User Growth Metrics
+      - record: bluecollar:users:total
+        expr: bluecollar_users_total
+
+      - record: bluecollar:users:verified:ratio
+        expr: bluecollar_users_verified / clamp_min(bluecollar_users_total, 1)
+
+      - record: bluecollar:users:growth:monthly
+        expr: rate(bluecollar_users_total[30d]) * 30 * 24 * 3600
+
+      # Reviews & Ratings
+      - record: bluecollar:reviews:average_rating
+        expr: bluecollar_reviews_avg_rating
+
+      - record: bluecollar:reviews:count:total
+        expr: bluecollar_reviews_total
+
+      # Contract Interactions
+      - record: bluecollar:contract:registrations:success_rate
+        expr: bluecollar_contract_registrations_successful / clamp_min(bluecollar_contract_registrations_total, 1)
+
+      - record: bluecollar:contract:transactions:avg_gas
+        expr: bluecollar_contract_gas_used_total / clamp_min(bluecollar_contract_transactions_total, 1)

@@ -1,0 +1,205 @@
+{
+  "dashboard": {
+    "title": "API Performance",
+    "tags": ["api", "performance"],
+    "timezone": "browser",
+    "refresh": "10s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Request Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(http_requests_total[1m])",
+            "legendFormat": "{{ method }} {{ route }}"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "req/sec",
+            "format": "short"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Error Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(http_requests_total{status=~\"5..\"}[5m])",
+            "legendFormat": "{{ route }}"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "errors/sec"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Response Time - P50",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, rate(http_request_duration_seconds_bucket[5m]))",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s"
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "Response Time - P95",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s"
+          }
+        }
+      },
+      {
+        "id": 5,
+        "title": "Response Time - P99",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m]))",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s"
+          }
+        }
+      },
+      {
+        "id": 6,
+        "title": "Response Times by Endpoint",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "{{ route }} (p95)"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "seconds"
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Request Size Distribution",
+        "type": "histogram",
+        "targets": [
+          {
+            "expr": "http_request_size_bytes",
+            "legendFormat": "{{ method }} {{ route }}"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "bytes"
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Response Size Distribution",
+        "type": "histogram",
+        "targets": [
+          {
+            "expr": "http_response_size_bytes",
+            "legendFormat": "{{ method }} {{ route }} ({{ status_code }})"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "bytes"
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Database Query Duration",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(db_query_duration_seconds_bucket[5m]))",
+            "legendFormat": "{{ operation }} on {{ table }} (p95)"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "seconds"
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "title": "Database Queries per Second",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(db_queries_total[1m])",
+            "legendFormat": "{{ operation }} on {{ table }} ({{ status }})"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "queries/sec"
+          }
+        ]
+      },
+      {
+        "id": 11,
+        "title": "HTTP Status Codes",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(http_requests_total[1m])",
+            "legendFormat": "{{ status_code }}"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "requests/sec"
+          }
+        ]
+      },
+      {
+        "id": 12,
+        "title": "Cache Hit Rate",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "(rate(cache_hits_total[5m]) / (rate(cache_hits_total[5m]) + rate(cache_misses_total[5m]))) * 100",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "max": 100,
+            "min": 0
+          }
+        }
+      }
+    ]
+  }
+}

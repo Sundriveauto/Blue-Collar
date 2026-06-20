@@ -26,6 +26,7 @@ import { sanitize } from './middleware/sanitize.js'
 import { versionMiddleware, deprecationWarning } from './middleware/version.js'
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js'
 import docsRouter from './openapi/docs.js'
+import { metricsEndpoint, metricsMiddleware } from './middleware/metrics.js'
 import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -47,6 +48,7 @@ app.use(cors())
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 app.use(sanitize)
+app.use(metricsMiddleware)
 app.use(requestLogger)
 app.use(methodOverride('X-HTTP-Method'))
 app.use(passport.initialize())
@@ -145,6 +147,8 @@ app.get('/metrics/cache', (_req, res) => {
     hitRate: total > 0 ? `${Math.round((cacheMetrics.hits / total) * 100)}%` : '0%',
   })
 })
+
+app.get('/metrics', metricsEndpoint)
 
 // Swagger UI — development only
 if (process.env['NODE_ENV'] !== 'production') {

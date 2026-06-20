@@ -10,19 +10,23 @@ processors:
   batch:
     timeout: 5s
     send_batch_size: 512
+  
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
 
 exporters:
   debug:
     verbosity: normal
-  # Uncomment and configure to forward to a backend (Jaeger, Tempo, etc.):
-  # otlp/jaeger:
-  #   endpoint: jaeger:4317
-  #   tls:
-  #     insecure: true
+  
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
 
 service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [batch]
-      exporters: [debug]
+      processors: [memory_limiter, batch]
+      exporters: [debug, otlp/jaeger]

@@ -1,0 +1,250 @@
+version: '3.8'
+
+services:
+  # Prometheus - Time series database and alerting engine
+  prometheus:
+    image: prom/prometheus:v2.50.0
+    container_name: bluecollar-prometheus
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ./deploy/prometheus/business-metrics.yml:/etc/prometheus/business-metrics.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+    ports:
+      - '9090:9090'
+    networks:
+      - bluecollar-network
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:9090/-/healthy']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # AlertManager - Alert routing and notification
+  alertmanager:
+    image: prom/alertmanager:v0.26.0
+    container_name: bluecollar-alertmanager
+    volumes:
+      - ./deploy/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+    ports:
+      - '9093:9093'
+    environment:
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+      - PAGERDUTY_SERVICE_KEY=${PAGERDUTY_SERVICE_KEY}
+      - ALERT_EMAIL_CRITICAL=${ALERT_EMAIL_CRITICAL}
+      - ALERT_EMAIL_SLA=${ALERT_EMAIL_SLA}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+    networks:
+      - bluecollar-network
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:9093/-/healthy']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Grafana - Visualization and dashboarding
+  grafana:
+    image: grafana/grafana:11.0.0
+    container_name: bluecollar-grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_SERVER_ROOT_URL=http://grafana:3000
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - '3001:3000'
+    networks:
+      - bluecollar-network
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:3000/api/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Jaeger - Distributed tracing
+  jaeger:
+    image: jaegertracing/all-in-one:1.51
+    container_name: bluecollar-jaeger
+    environment:
+      - COLLECTOR_ZIPKIN_HOST_PORT=:9411
+      - COLLECTOR_OTLP_ENABLED=true
+    volumes:
+      - jaeger-data:/badger
+    ports:
+      - '5775:5775/udp'    # Zipkin compact thrift
+      - '6831:6831/udp'    # Jaeger compact thrift
+      - '6832:6832/udp'    # Jaeger binary thrift
+      - '5778:5778'        # Serve configs
+      - '16686:16686'      # Frontend
+      - '14250:14250'      # Accept model.proto
+      - '14268:14268'      # Accept jaeger.thrift
+      - '14269:14269'      # Admin port
+      - '4317:4317'        # OTLP gRPC
+      - '4318:4318'        # OTLP HTTP
+      - '9411:9411'        # Zipkin endpoint
+    networks:
+      - bluecollar-network
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:14269/']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # OpenTelemetry Collector - OTLP ingestion
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.92.0
+    container_name: bluecollar-otel-collector
+    volumes:
+      - ./deploy/otel/otel-collector-config.yml:/etc/otel-collector-config.yml:ro
+    command:
+      - '--config=/etc/otel-collector-config.yml'
+    ports:
+      - '4317:4317'   # OTLP gRPC receiver
+      - '4318:4318'   # OTLP HTTP receiver
+      - '9411:9411'   # Zipkin receiver
+      - '14250:14250' # OTLP gRPC
+      - '8888:8888'   # Prometheus metrics
+    networks:
+      - bluecollar-network
+    depends_on:
+      - jaeger
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:8888/metrics']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # PostgreSQL Exporter - Database metrics
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.13.2
+    container_name: bluecollar-postgres-exporter
+    environment:
+      - DATA_SOURCE_NAME=postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}?sslmode=disable
+    ports:
+      - '9187:9187'
+    networks:
+      - bluecollar-network
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:9187/metrics']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis Exporter - Cache metrics
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: bluecollar-redis-exporter
+    environment:
+      - REDIS_ADDR=redis:6379
+    ports:
+      - '9121:9121'
+    networks:
+      - bluecollar-network
+    depends_on:
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:9121/metrics']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Node Exporter - Host metrics
+  node-exporter:
+    image: prom/node-exporter:v1.7.0
+    container_name: bluecollar-node-exporter
+    command:
+      - '--path.procfs=/proc'
+      - '--path.sysfs=/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    volumes:
+      - /proc:/proc:ro
+      - /sys:/sys:ro
+      - /:/rootfs:ro
+    ports:
+      - '9100:9100'
+    networks:
+      - bluecollar-network
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:9100/metrics']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Logstash - Log aggregation and processing
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.11.0
+    container_name: bluecollar-logstash
+    volumes:
+      - ./deploy/logstash/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
+    environment:
+      - ELASTICSEARCH_HOST=elasticsearch
+      - ELASTICSEARCH_PORT=9200
+    ports:
+      - '5000:5000/tcp'  # TCP input
+      - '5000:5000/udp'  # UDP input
+      - '8080:8080'      # HTTP input
+      - '9600:9600'      # Monitoring API
+    networks:
+      - bluecollar-network
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+
+  # Elasticsearch - Log storage and search
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: bluecollar-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    ports:
+      - '9200:9200'
+      - '9300:9300'
+    networks:
+      - bluecollar-network
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -s http://localhost:9200/_cluster/health | grep -q "status.*green"']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  prometheus-data:
+  alertmanager-data:
+  grafana-data:
+  jaeger-data:
+  elasticsearch-data:
+
+networks:
+  bluecollar-network:
+    external: true

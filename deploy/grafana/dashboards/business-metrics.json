@@ -1,0 +1,234 @@
+{
+  "dashboard": {
+    "title": "Business Metrics",
+    "tags": ["business", "kpi"],
+    "timezone": "browser",
+    "refresh": "5m",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Worker Registrations (This Month)",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "increase(bluecollar_worker_registrations_total[30d])",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            }
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "Worker Registrations (This Week)",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "increase(bluecollar_worker_registrations_total[7d])",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Active Workers",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "bluecollar_workers_active",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Worker Registrations by Category",
+        "type": "pie",
+        "targets": [
+          {
+            "expr": "bluecollar_worker_registrations_total",
+            "legendFormat": "{{ category }}"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Total Tips/Payments",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(increase(bluecollar_tips_total[30d]))",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Total Tips Value (USD)",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(increase(bluecollar_tips_value_usd_total[30d]))",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD"
+          }
+        }
+      },
+      {
+        "id": 7,
+        "title": "Average Tip Value",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "bluecollar:tips:average_value",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD"
+          }
+        }
+      },
+      {
+        "id": 8,
+        "title": "Tips Over Time",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(bluecollar_tips_total[1d])",
+            "legendFormat": "{{ currency }}"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "tips/day"
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Total Users",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(bluecollar_users_total)",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "title": "Verified Users Ratio",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "(sum(bluecollar_users_verified) / sum(bluecollar_users_total)) * 100",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "max": 100,
+            "min": 0
+          }
+        }
+      },
+      {
+        "id": 11,
+        "title": "Monthly User Growth",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "bluecollar:users:growth:monthly",
+            "legendFormat": "New users/month"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "users/month"
+          }
+        ]
+      },
+      {
+        "id": 12,
+        "title": "Users by Role",
+        "type": "pie",
+        "targets": [
+          {
+            "expr": "bluecollar_users_total",
+            "legendFormat": "{{ role }}"
+          }
+        ]
+      },
+      {
+        "id": 13,
+        "title": "Total Reviews",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(increase(bluecollar_reviews_total[30d]))",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 14,
+        "title": "Average Rating",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "bluecollar_reviews_avg_rating",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "max": 5,
+            "min": 0
+          }
+        }
+      },
+      {
+        "id": 15,
+        "title": "Contract Registration Success Rate",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "bluecollar:contract:registrations:success_rate * 100",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "max": 100,
+            "min": 0
+          }
+        }
+      },
+      {
+        "id": 16,
+        "title": "Average Gas Used per Transaction",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "bluecollar:contract:transactions:avg_gas",
+            "refId": "A"
+          }
+        ]
+      }
+    ]
+  }
+}

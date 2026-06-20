@@ -8,16 +8,26 @@ export function usePushNotifications() {
   const [isSupported, setIsSupported] = useState(false);
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [permissionStatus, setPermissionStatus] = useState<NotificationPermission | null>(null);
 
   useEffect(() => {
     const supported =
       typeof window !== "undefined" &&
       "serviceWorker" in navigator &&
-      "PushManager" in window;
+      "PushManager" in window &&
+      "Notification" in window;
     setIsSupported(supported);
 
     if (supported) {
       checkSubscription();
+      if ("permissions" in navigator) {
+        navigator.permissions.query({ name: "notifications" }).then((result) => {
+          setPermissionStatus(result.state as NotificationPermission);
+          result.addEventListener("change", () => {
+            setPermissionStatus(result.state as NotificationPermission);
+          });
+        });
+      }
     }
   }, []);
 
@@ -35,7 +45,7 @@ export function usePushNotifications() {
     if (!isSupported) {
       toast({
         title: "Not Supported",
-        description: "Push notifications are not supported in your browser",
+        description: "Push notifications are not available in your browser",
         type: "error",
       });
       return;
@@ -47,7 +57,7 @@ export function usePushNotifications() {
       if (permission !== "granted") {
         toast({
           title: "Permission Denied",
-          description: "You denied push notification permissions",
+          description: "Enable notifications in browser settings to receive updates",
           type: "error",
         });
         setIsLoading(false);
@@ -66,12 +76,11 @@ export function usePushNotifications() {
         applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
       });
 
-      // Save subscription to backend
       const response = await fetch("/api/users/me/push-subscription", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
+          Authorization: `Bearer ${typeof localStorage !== "undefined" ? localStorage.getItem("token") : ""}`,
         },
         body: JSON.stringify({
           endpoint: subscription.endpoint,
@@ -85,16 +94,17 @@ export function usePushNotifications() {
       if (!response.ok) throw new Error("Failed to save subscription");
 
       setIsSubscribed(true);
+      setPermissionStatus("granted");
       toast({
-        title: "Subscribed",
-        description: "You will now receive push notifications",
+        title: "Notifications Enabled",
+        description: "You'll receive updates about worker availability",
         type: "success",
       });
     } catch (error) {
       console.error("[usePushNotifications] subscribe error:", error);
       toast({
         title: "Error",
-        description: "Failed to enable push notifications",
+        description: "Failed to enable notifications. Please try again.",
         type: "error",
       });
     } finally {
@@ -110,12 +120,11 @@ export function usePushNotifications() {
 
       if (!subscription) throw new Error("No subscription found");
 
-      // Remove from backend
       const response = await fetch("/api/users/me/push-subscription", {
         method: "DELETE",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
+          Authorization: `Bearer ${typeof localStorage !== "undefined" ? localStorage.getItem("token") : ""}`,
         },
         body: JSON.stringify({ endpoint: subscription.endpoint }),
       });
@@ -125,15 +134,15 @@ export function usePushNotifications() {
       await subscription.unsubscribe();
       setIsSubscribed(false);
       toast({
-        title: "Unsubscribed",
-        description: "Push notifications have been disabled",
+        title: "Notifications Disabled",
+        description: "You will no longer receive notifications",
         type: "success",
       });
     } catch (error) {
       console.error("[usePushNotifications] unsubscribe error:", error);
       toast({
         title: "Error",
-        description: "Failed to disable push notifications",
+        description: "Failed to disable notifications",
         type: "error",
       });
     } finally {
@@ -145,6 +154,7 @@ export function usePushNotifications() {
     isSupported,
     isSubscribed,
     isLoading,
+    permissionStatus,
     subscribe,
     unsubscribe,
   };

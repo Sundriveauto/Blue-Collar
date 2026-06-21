@@ -4,56 +4,102 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  PNPM_VERSION: 9
+
 jobs:
   perf-test:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: bluecollar
+          POSTGRES_PASSWORD: bluecollar
+          POSTGRES_DB: bluecollar_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v2
-        with:
-          version: 9
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
-      - name: Start API
+      - name: Run migrations and seed
         run: |
-          cd packages/api
-          npm run build
-          npm run start:test &
-          sleep 10
+          pnpm prisma migrate deploy
+          pnpm seed
+        working-directory: packages/api
+        env:
+          DATABASE_URL: postgresql://bluecollar:bluecollar@localhost:5432/bluecollar_test
+
+      - name: Build API
+        run: pnpm build
+        working-directory: packages/api
+
+      - name: Start API server
+        run: node dist/index.js &
+        working-directory: packages/api
+        env:
+          DATABASE_URL: postgresql://bluecollar:bluecollar@localhost:5432/bluecollar_test
+          JWT_SECRET: perf-test-secret
+          PORT: 3000
+
+      - name: Wait for API
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3000/health && break
+            sleep 2
+          done
 
       - name: Install k6
         run: |
-          sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3232A
-          echo "deb https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
-          sudo apt-get update
-          sudo apt-get install -y k6
+          curl https://github.com/grafana/k6/releases/download/v0.54.0/k6-v0.54.0-linux-amd64.tar.gz -L | tar xvz --strip-components 1
 
-      - name: Run performance tests
-        run: |
-          k6 run deploy/load-tests/performance-baseline.js
+      - name: Run performance baseline
+        run: ./k6 run --out json=perf-metrics.json deploy/load-tests/performance-baseline.js
+        env:
+          BASE_URL: http://localhost:3000/api
 
       - name: Store baseline metrics
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: baseline-metrics
           path: perf-metrics.json
 
       - name: Comment PR with results
+        if: always()
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            const metrics = JSON.parse(fs.readFileSync('perf-metrics.json', 'utf8'));
-            const comment = `## Performance Test Results\n\n- p95 Latency: ${metrics.p95}ms\n- p99 Latency: ${metrics.p99}ms\n- RPS: ${metrics.rps}`;
+            let comment = '## Performance Test Results\n\nMetrics file not found — k6 run may have failed.';
+            try {
+              const raw = fs.readFileSync('perf-metrics.json', 'utf8');
+              // k6 JSON output is newline-delimited; grab the summary line
+              const lines = raw.trim().split('\n');
+              const summary = lines.map(l => { try { return JSON.parse(l); } catch { return null; } })
+                                   .find(o => o && o.type === 'Point' && o.metric === 'http_req_duration');
+              comment = `## Performance Test Results\n\nSee attached artifact \`baseline-metrics\` for full k6 output.`;
+            } catch (_) {}
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,

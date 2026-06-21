@@ -1,0 +1,126 @@
+###############################################################################
+# Blue-Green Services
+#
+# Three services exist:
+#   bluecollar-api-blue   → always points to the blue Deployment
+#   bluecollar-api-green  → always points to the green Deployment
+#   bluecollar-api        → the active/live service; its selector is PATCHED
+#                           by the deploy script to point at whichever slot
+#                           is being promoted.
+#
+# The Ingress only references  bluecollar-api  (the live service) and
+# bluecollar-api-canary (used by Argo Rollouts for canary traffic splitting).
+###############################################################################
+
+# ── Blue slot service ─────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: bluecollar-api-blue
+  namespace: bluecollar
+  labels:
+    app.kubernetes.io/name: bluecollar-api
+    app.kubernetes.io/part-of: bluecollar
+    slot: blue
+spec:
+  type: ClusterIP
+  selector:
+    app: bluecollar-api
+    slot: blue
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3000
+      protocol: TCP
+
+---
+# ── Green slot service ────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: bluecollar-api-green
+  namespace: bluecollar
+  labels:
+    app.kubernetes.io/name: bluecollar-api
+    app.kubernetes.io/part-of: bluecollar
+    slot: green
+spec:
+  type: ClusterIP
+  selector:
+    app: bluecollar-api
+    slot: green
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3000
+      protocol: TCP
+
+---
+# ── Live / active service (selector is patched at deploy time) ────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: bluecollar-api
+  namespace: bluecollar
+  labels:
+    app.kubernetes.io/name: bluecollar-api
+    app.kubernetes.io/part-of: bluecollar
+  annotations:
+    # Populated by deploy script so the current slot is always visible
+    bluecollar.io/active-slot: "blue"
+spec:
+  type: ClusterIP
+  # This selector is patched by switch-traffic.sh to target either slot
+  selector:
+    app: bluecollar-api
+    slot: blue
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3000
+      protocol: TCP
+
+---
+# ── Canary service (used by Argo Rollouts traffic splitting) ──────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: bluecollar-api-canary
+  namespace: bluecollar
+  labels:
+    app.kubernetes.io/name: bluecollar-api
+    app.kubernetes.io/part-of: bluecollar
+    slot: canary
+spec:
+  type: ClusterIP
+  # Initially points at green; Argo Rollouts manages the weight via Ingress annotations
+  selector:
+    app: bluecollar-api
+    slot: green
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3000
+      protocol: TCP
+
+---
+# ── Stable service alias (used by Argo Rollouts for the stable slot) ──────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: bluecollar-api-stable
+  namespace: bluecollar
+  labels:
+    app.kubernetes.io/name: bluecollar-api
+    app.kubernetes.io/part-of: bluecollar
+    slot: stable
+spec:
+  type: ClusterIP
+  selector:
+    app: bluecollar-api
+    slot: blue
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3000
+      protocol: TCP

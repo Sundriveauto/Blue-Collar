@@ -10,6 +10,7 @@ import {
   updateWorker,
   deleteWorker,
   toggleActivation,
+  advancedSearch,
 } from '../controllers/workers.js'
 import { toggleBookmark } from '../controllers/bookmarks.js'
 import { createWorkerReview, deleteReview, listWorkerReviews } from './reviews.js'
@@ -52,6 +53,7 @@ async function showWorkerWithRatings(req: Request, res: Response) {
 }
 
 router.get('/', generalRateLimit, cacheMiddleware(TTL.SHORT), listWorkers)
+router.get('/search/advanced', generalRateLimit, cacheMiddleware(TTL.SHORT), advancedSearch)
 router.get('/mine', authenticate, authorize('curator', 'admin'), listMyWorkers)
 router.get('/mine', withAuth(['curator', 'admin']), listMyWorkers)
 router.get('/:id', generalRateLimit, cacheMiddleware(TTL.MEDIUM), showWorkerWithRatings)

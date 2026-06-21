@@ -5,6 +5,7 @@ import type { CreateWorkerBody, UpdateWorkerBody } from '../interfaces/index.js'
 import { publishEvent } from './webhook.service.js'
 import { appEvents } from '../events/app-events.js'
 import { createServiceLogger } from '../utils/logger.js'
+import { workerRepository } from '../repositories/worker.repository.js'
 
 const logger = createServiceLogger('WorkerService')
 const workerInclude = { category: true, curator: true } as const
@@ -315,4 +316,42 @@ export async function toggleWorker(id: string) {
   })
   appEvents.emit('worker.toggled', { workerId: id, isActive: updated.isActive })
   return formatWorker(updated)
+}
+
+/**
+ * Advanced search with geographic, rating, availability, and category filters.
+ * Combines multiple search criteria and calculates relevance scores.
+ */
+export async function advancedSearch(opts: {
+  query?: string
+  lat?: number
+  lng?: number
+  radius?: number
+  categories?: string[]
+  minRating?: number
+  maxRating?: number
+  dayOfWeek?: number
+  startTime?: string
+  endTime?: string
+  isVerified?: boolean
+  sortBy?: 'relevance' | 'rating' | 'distance' | 'newest' | 'reviews'
+  skip?: number
+  take?: number
+}) {
+  return workerRepository.advancedSearch({
+    query: opts.query,
+    lat: opts.lat,
+    lng: opts.lng,
+    radius: opts.radius,
+    categories: opts.categories,
+    minRating: opts.minRating,
+    maxRating: opts.maxRating,
+    dayOfWeek: opts.dayOfWeek,
+    startTime: opts.startTime,
+    endTime: opts.endTime,
+    isVerified: opts.isVerified,
+    sortBy: opts.sortBy,
+    skip: opts.skip,
+    take: opts.take,
+  })
 }

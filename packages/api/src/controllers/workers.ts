@@ -306,3 +306,81 @@ export async function listMyWorkers(req: Request, res: Response) {
     code: 200,
   })
 }
+
+/**
+ * GET /api/workers/search/advanced
+ * Advanced search with filtering by location, rating, availability, and categories.
+ *
+ * @param req - Query params: query, lat, lng, radius, categories, minRating, maxRating, dayOfWeek, startTime, endTime, isVerified, sortBy, page, limit
+ * @param res - JSON with paginated results, total count, and hasMore flag
+ */
+export async function advancedSearch(req: Request, res: Response) {
+  try {
+    const {
+      query,
+      lat,
+      lng,
+      radius,
+      categories,
+      minRating,
+      maxRating,
+      dayOfWeek,
+      startTime,
+      endTime,
+      isVerified,
+      sortBy,
+      page = '1',
+      limit = '20',
+    } = req.query
+
+    const limitNum = Math.min(Math.max(Number(limit) || 20, 1), 100)
+    const pageNum = Math.max(Number(page) || 1, 1)
+    const skip = (pageNum - 1) * limitNum
+
+    const result = await workerService.advancedSearch({
+      query: query ? String(query) : undefined,
+      lat: lat ? Number(lat) : undefined,
+      lng: lng ? Number(lng) : undefined,
+      radius: radius ? Number(radius) : undefined,
+      categories: categories ? String(categories).split(',').map(c => c.trim()).filter(Boolean) : undefined,
+      minRating: minRating ? Number(minRating) : undefined,
+      maxRating: maxRating ? Number(maxRating) : undefined,
+      dayOfWeek: dayOfWeek ? Number(dayOfWeek) : undefined,
+      startTime: startTime ? String(startTime) : undefined,
+      endTime: endTime ? String(endTime) : undefined,
+      isVerified: isVerified !== undefined ? isVerified === 'true' : undefined,
+      sortBy: sortBy ? String(sortBy) : undefined,
+      skip,
+      take: limitNum,
+    })
+
+    // Track search analytics
+    if (query) {
+      await db.searchAnalytics?.create?.({
+        data: {
+          query: String(query),
+          resultsCount: result.data.length,
+          hasFilters: !!(lat || categories || minRating),
+          ipAddress: req.ip || 'unknown',
+        },
+      }).catch(() => {
+        // Silently fail if analytics table doesn't exist
+      })
+    }
+
+    return res.json({
+      data: result.data.map(w => WorkerResource(w)),
+      meta: {
+        total: result.total,
+        page: pageNum,
+        limit: limitNum,
+        hasMore: result.hasMore,
+        pages: Math.ceil(result.total / limitNum),
+      },
+      status: 'success',
+      code: 200,
+    })
+  } catch (error) {
+    return handleError(res, error)
+  }
+}

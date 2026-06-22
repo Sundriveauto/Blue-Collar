@@ -177,11 +177,14 @@ proptest! {
         let id = Symbol::new(&env, &escrow_id);
         client.create_escrow(&id, &payer, &worker, &token_addr, &amount, &2000);
 
-        // Advance time past expiry
+        // Advance the timestamp past expiry. Keep `sequence_number` steady so the
+        // persistent escrow entry is not archived (expiry is timestamp-based, and
+        // the in-process test host archives entries once the ledger sequence passes
+        // their TTL — which would otherwise mask the behavior under test).
         env.ledger().set(LedgerInfo {
             timestamp: 3000,
             protocol_version: 22,
-            sequence_number: 2,
+            sequence_number: 1,
             network_id: Default::default(),
             base_reserve: 10,
             min_temp_entry_ttl: 1,

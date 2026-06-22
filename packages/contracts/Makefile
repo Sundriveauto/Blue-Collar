@@ -13,7 +13,8 @@ FEE_BPS       ?= 0
 
 WASM_DIR := target/wasm32-unknown-unknown/release
 
-.PHONY: build build-registry build-market coverage fuzz fuzz-register fuzz-tip \
+.PHONY: build build-registry build-market test coverage \
+        fuzz fuzz-proptest fuzz-register fuzz-tip fuzz-migrate \
         deploy-testnet deploy-mainnet \
         deploy-registry-testnet deploy-market-testnet \
         deploy-registry-mainnet deploy-market-mainnet \
@@ -31,6 +32,10 @@ build-registry:
 build-market:
 	cargo build --release --target wasm32-unknown-unknown --package bluecollar-market
 
+# Run the full workspace test suite (unit + upgrade framework + property tests).
+test:
+	cargo test --workspace
+
 coverage:
 	rustup component add llvm-tools-preview
 	cargo install --locked cargo-llvm-cov
@@ -40,15 +45,26 @@ coverage:
 # Fuzzing
 # ---------------------------------------------------------------------------
 
-fuzz: fuzz-register fuzz-tip
+# Property-based fuzz tests run under the normal test harness (no nightly
+# required) and are the suite exercised in CI.
+fuzz: fuzz-proptest
 
+fuzz-proptest:
+	cargo test -p bluecollar-fuzz --tests
+
+# Coverage-guided libFuzzer targets (nightly + cargo-fuzz). The `fuzzing`
+# feature gates the libFuzzer bins so they never break the normal build.
 fuzz-register:
 	cargo install --locked cargo-fuzz
-	cargo +nightly fuzz run fuzz_register -- -max_len=1024 -timeout=10
+	cargo +nightly fuzz run fuzz_register --features fuzzing -- -max_len=1024 -timeout=10
 
 fuzz-tip:
 	cargo install --locked cargo-fuzz
-	cargo +nightly fuzz run fuzz_tip -- -max_len=1024 -timeout=10
+	cargo +nightly fuzz run fuzz_tip --features fuzzing -- -max_len=1024 -timeout=10
+
+fuzz-migrate:
+	cargo install --locked cargo-fuzz
+	cargo +nightly fuzz run fuzz_migrate --features fuzzing -- -max_len=1024 -timeout=10
 
 # ---------------------------------------------------------------------------
 # Deploy — testnet

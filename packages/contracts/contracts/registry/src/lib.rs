@@ -331,7 +331,7 @@ impl RegistryContract {
         let role = Symbol::new(&env, ROLE_ADMIN);
         let mut members: Vec<Address> = Vec::new(&env);
         members.push_back(admin.clone());
-        env.storage().persistent().set(&DataKey::RoleMembers(role_to_id_with_env(&env, &role)), &members);
+        env.storage().persistent().set(&DataKey::RoleMembers(Self::role_to_id_with_env(&env, &role)), &members);
         env.events().publish((symbol_short!("RlGrnt"), role, admin), ());
     }
 
@@ -343,7 +343,7 @@ impl RegistryContract {
 fn get_role_members(env: &Env, role: &Symbol) -> Vec<Address> {
     env.storage()
         .persistent()
-        .get(&DataKey::RoleMembers(role_to_id_with_env(&env, role)))
+        .get(&DataKey::RoleMembers(Self::role_to_id_with_env(&env, role)))
         .unwrap_or(Vec::new(env))
 }
 
@@ -443,7 +443,7 @@ fn role_to_id_with_env(env: &Env, role: &Symbol) -> u64 {
         let mut members = Self::get_role_members(&env, &role);
         if members.iter().all(|m| m != account) {
             members.push_back(account.clone());
-            env.storage().persistent().set(&DataKey::RoleMembers(role_to_id_with_env(&env, &role)), &members);
+            env.storage().persistent().set(&DataKey::RoleMembers(Self::role_to_id_with_env(&env, &role)), &members);
         }
 
         env.events().publish((symbol_short!("RlGrnt"), role, account), ());
@@ -479,7 +479,7 @@ fn role_to_id_with_env(env: &Env, role: &Symbol) -> u64 {
             }
         }
         assert!(found, "Account does not hold role");
-        env.storage().persistent().set(&DataKey::RoleMembers(role_to_id_with_env(&env, &role)), &updated);
+        env.storage().persistent().set(&DataKey::RoleMembers(Self::role_to_id_with_env(&env, &role)), &updated);
 
         env.events().publish((symbol_short!("RlRvkd"), role, account), ());
     }
@@ -623,7 +623,7 @@ fn role_to_id_with_env(env: &Env, role: &Symbol) -> u64 {
         let pauser_role = Self::role_symbol(&env, ROLE_PAUSER_CACHED);
         Self::require_role(&env, &pauser_role, &admin);
         env.storage().instance().set(&DataKey::Paused, &true);
-        env.events().publish((symbol_short!("ContractPaused"), admin), ());
+        env.events().publish((Symbol::new(&env, "ContractPaused"), admin), ());
     }
 
     /// Unpause the contract, re-enabling all state-mutating operations.
@@ -640,7 +640,7 @@ fn role_to_id_with_env(env: &Env, role: &Symbol) -> u64 {
         let pauser_role = Self::role_symbol(&env, ROLE_PAUSER_CACHED);
         Self::require_role(&env, &pauser_role, &admin);
         env.storage().instance().set(&DataKey::Paused, &false);
-        env.events().publish((symbol_short!("ContractUnpaused"), admin), ());
+        env.events().publish((Symbol::new(&env, "ContractUnpaused"), admin), ());
     }
 
     /// Returns `true` if the contract is currently paused.
@@ -802,7 +802,7 @@ fn role_to_id_with_env(env: &Env, role: &Symbol) -> u64 {
         env.storage().persistent().set(&key, &worker);
         env.storage().persistent().extend_ttl(&key, TTL_THRESHOLD, TTL_EXTEND_TO);
         // Emit Worker TTL extended event
-        env.events().publish((symbol_short!("WorkerTTLExtended"), id), ());
+        env.events().publish((Symbol::new(&env, "WorkerTTLExtended"), id.clone()), ());
 
         let list_key = DataKey::WorkerList;
         let mut list: Vec<Symbol> = env
@@ -814,7 +814,7 @@ fn role_to_id_with_env(env: &Env, role: &Symbol) -> u64 {
         env.storage().persistent().set(&list_key, &list);
         env.storage().persistent().extend_ttl(&list_key, TTL_THRESHOLD, TTL_EXTEND_TO);
         // Emit WorkerList TTL extended event
-        env.events().publish((symbol_short!("WorkerListTTLExtended"), ()), ());
+        env.events().publish((Symbol::new(&env, "WorkerListTTLExtended"), ()), ());
 
         // #529: Maintain WorkerCount for efficient pagination.
         let count: u32 = env
@@ -827,7 +827,7 @@ fn role_to_id_with_env(env: &Env, role: &Symbol) -> u64 {
             .set(&DataKey::WorkerCount, &(count + 1));
 
         env.events().publish(
-            (symbol_short!("WorkerRegistered"), id),
+            (Symbol::new(&env, "WorkerRegistered"), id),
             (owner, category),
         );
     }
@@ -861,7 +861,7 @@ fn role_to_id_with_env(env: &Env, role: &Symbol) -> u64 {
         let new_status = worker.is_active;
         env.storage().persistent().set(&DataKey::Worker(id.clone()), &worker);
 
-        env.events().publish((symbol_short!("WorkerToggled"), id), new_status);
+        env.events().publish((Symbol::new(&env, "WorkerToggled"), id), new_status);
     }
 
     /// Update a worker's name, category, location hash, and contact hash. Owner only.
@@ -1131,7 +1131,7 @@ fn role_to_id_with_env(env: &Env, role: &Symbol) -> u64 {
         if updated.iter().all(|m| m != new_admin) {
             updated.push_back(new_admin.clone());
         }
-        env.storage().persistent().set(&DataKey::RoleMembers(role_to_id_with_env(&env, &admin_role)), &updated);
+        env.storage().persistent().set(&DataKey::RoleMembers(Self::role_to_id_with_env(&env, &admin_role)), &updated);
     }
 
     // -------------------------------------------------------------------------
@@ -1209,7 +1209,7 @@ fn role_to_id_with_env(env: &Env, role: &Symbol) -> u64 {
         env.storage().persistent().set(&DataKey::Worker(id.clone()), &worker);
         env.storage().persistent().extend_ttl(&DataKey::Worker(id.clone()), TTL_THRESHOLD, TTL_EXTEND_TO);
         // Emit Worker TTL extended event
-        env.events().publish((symbol_short!("WorkerTTLExtended"), id), ());
+        env.events().publish((Symbol::new(&env, "WorkerTTLExtended"), id.clone()), ());
 
         env.events().publish((symbol_short!("RevUpd"), id), (review_count, avg_rating));
     }
@@ -1296,7 +1296,7 @@ fn role_to_id_with_env(env: &Env, role: &Symbol) -> u64 {
         env.storage().persistent().set(&DataKey::Worker(id.clone()), &worker);
         env.storage().persistent().extend_ttl(&DataKey::Worker(id.clone()), TTL_THRESHOLD, TTL_EXTEND_TO);
         // Emit Worker TTL extended event
-        env.events().publish((symbol_short!("WorkerTTLExtended"), id), ());
+        env.events().publish((Symbol::new(&env, "WorkerTTLExtended"), id.clone()), ());
 
         env.events().publish((symbol_short!("SubRnw"), id), new_expires_at);
     }
@@ -1585,7 +1585,7 @@ fn role_to_id_with_env(env: &Env, role: &Symbol) -> u64 {
             env.storage().persistent().set(&key, &worker);
         env.storage().persistent().extend_ttl(&key, TTL_THRESHOLD, TTL_EXTEND_TO);
         // Emit Worker TTL extended event
-        env.events().publish((symbol_short!("WorkerTTLExtended"), id), ());
+        env.events().publish((Symbol::new(&env, "WorkerTTLExtended"), id.clone()), ());
             list.push_back(id.clone());
 
             env.events().publish(
@@ -1599,7 +1599,7 @@ fn role_to_id_with_env(env: &Env, role: &Symbol) -> u64 {
         env.storage().persistent().set(&list_key, &list);
         env.storage().persistent().extend_ttl(&list_key, TTL_THRESHOLD, TTL_EXTEND_TO);
         // Emit WorkerList TTL extended event
-        env.events().publish((symbol_short!("WorkerListTTLExtended"), ()), ());
+        env.events().publish((Symbol::new(&env, "WorkerListTTLExtended"), ()), ());
 
         results
     }
@@ -1653,7 +1653,8 @@ fn role_to_id_with_env(env: &Env, role: &Symbol) -> u64 {
         let new_rewards = info.amount
             .checked_mul(Self::REWARD_RATE_BPS_PER_1000_SECS)
             .and_then(|v| v.checked_mul(elapsed as i128))
-            .and_then(|v| v.checked_div(1000))
+            // bps (÷10_000) × per-1000-seconds (÷1_000) = ÷10_000_000
+            .and_then(|v| v.checked_div(10_000_000))
             .expect("Reward overflow");
         info.rewards_accumulated = info.rewards_accumulated.checked_add(new_rewards).expect("Reward overflow");
         info.last_reward_ledger = now;
@@ -1740,7 +1741,8 @@ fn role_to_id_with_env(env: &Env, role: &Symbol) -> u64 {
         let final_rewards = info.amount
             .checked_mul(Self::REWARD_RATE_BPS_PER_1000_SECS)
             .and_then(|v| v.checked_mul(elapsed as i128))
-            .and_then(|v| v.checked_div(1000))
+            // bps (÷10_000) × per-1000-seconds (÷1_000) = ÷10_000_000
+            .and_then(|v| v.checked_div(10_000_000))
             .expect("Reward overflow");
         info.rewards_accumulated = info.rewards_accumulated.checked_add(final_rewards).expect("Reward overflow");
 
@@ -2137,7 +2139,7 @@ fn role_to_id_with_env(env: &Env, role: &Symbol) -> u64 {
         }
         env.storage().persistent().set(&DataKey::Categories, &updated);
 
-        env.events().publish((symbol_short!("CatRemoved"), name), ());
+        env.events().publish((Symbol::new(&env, "CatRemoved"), name), ());
     }
 
     /// Return all valid on-chain categories.
@@ -2248,8 +2250,14 @@ fn role_to_id_with_env(env: &Env, role: &Symbol) -> u64 {
 // Tests
 // =============================================================================
 
+// Integration-style unit tests and the contract-upgrade testing framework
+// live in `test.rs`; the `mod tests` block below holds the original inline tests.
+#[cfg(test)]
+mod test;
+
 #[cfg(test)]
 mod tests {
+    extern crate std;
     use super::*;
     use soroban_sdk::{testutils::{Address as _, Ledger, LedgerInfo}, Address, BytesN, Env, String, Symbol};
 
@@ -2492,7 +2500,7 @@ mod tests {
         t.client().add_curator(&t.admin, &t.curator);
 
         for i in 0..5u8 {
-            let id = Symbol::new(&t.env, &soroban_sdk::String::from_str(&t.env, &format!("w{i}")));
+            let id = Symbol::new(&t.env, &std::format!("w{i}"));
             t.client().register(
                 &id,
                 &t.owner,
@@ -2640,7 +2648,7 @@ mod tests {
         let mut hashes = Vec::new(&t.env);
 
         for i in 0..21u32 {
-            let id_str = soroban_sdk::String::from_str(&t.env, &format!("w{i}"));
+            let id_str = std::format!("w{i}");
             ids.push_back(Symbol::new(&t.env, &id_str));
             owners.push_back(t.owner.clone());
             names.push_back(String::from_str(&t.env, "W"));
@@ -2840,6 +2848,10 @@ mod tests {
     // Contract upgrade tests (#375)
     // -------------------------------------------------------------------------
 
+    /// State-migration data integrity: a schema migration must preserve all
+    /// existing worker storage. (A real WASM-swap upgrade is exercised in
+    /// `test.rs` behind the `wasm-upgrade-tests` feature, since the in-process
+    /// host cannot install a WASM blob from a dummy hash.)
     #[test]
     fn test_upgrade_preserves_storage() {
         let t = TestEnv::new();
@@ -2848,28 +2860,34 @@ mod tests {
 
         let worker_before = t.client().get_worker(&t.worker_id()).unwrap();
         assert_eq!(worker_before.name, String::from_str(&t.env, "Alice"));
+        assert_eq!(t.client().get_schema_version(), 1u32);
 
-        // Simulate upgrade by calling upgrade function
-        let dummy_hash = BytesN::from_array(&t.env, &[1u8; 32]);
-        t.client().upgrade(&t.admin, &dummy_hash);
+        // Run a schema migration (the data-integrity path of an upgrade).
+        t.client().migrate(&t.admin, &1u32);
 
-        // Storage should be preserved (in real scenario, contract would be redeployed)
+        // Storage must be preserved across the migration.
         let worker_after = t.client().get_worker(&t.worker_id()).unwrap();
         assert_eq!(worker_after.name, worker_before.name);
         assert_eq!(worker_after.owner, worker_before.owner);
+        assert_eq!(worker_after.reputation, worker_before.reputation);
+        assert_eq!(t.client().get_schema_version(), 2u32);
     }
 
     #[test]
+    #[should_panic(expected = "Missing role")]
     fn test_upgrade_requires_upgrader_role() {
-        let t = TestEnv::new();
-        let stranger = Address::generate(&t.env);
-        let dummy_hash = BytesN::from_array(&t.env, &[1u8; 32]);
+        // Build a contract whose admin was NOT granted ROLE_UPGRADER.
+        let env = Env::default();
+        env.mock_all_auths();
+        let admin = Address::generate(&env);
+        let contract_id = env.register_contract(None, RegistryContract);
+        let client = RegistryContractClient::new(&env, &contract_id);
+        client.initialize(&admin);
 
-        // Should panic because stranger doesn't have ROLE_UPGRADER
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            t.client().upgrade(&stranger, &dummy_hash);
-        }));
-        assert!(result.is_err());
+        // `upgrade` requires the stored admin to hold ROLE_UPGRADER, which was
+        // never granted here, so this must panic with "Missing role".
+        let dummy_hash = BytesN::from_array(&env, &[1u8; 32]);
+        client.upgrade(&dummy_hash);
     }
 
     // -------------------------------------------------------------------------
@@ -2936,7 +2954,7 @@ mod tests {
         t.client().add_curator(&t.admin, &t.curator);
 
         for i in 0..5u8 {
-            let id_str = soroban_sdk::String::from_str(&t.env, &format!("p{i}"));
+            let id_str = std::format!("p{i}");
             let id = Symbol::new(&t.env, &id_str);
             t.client().register(
                 &id, &t.owner,
@@ -2957,7 +2975,7 @@ mod tests {
         t.client().add_curator(&t.admin, &t.curator);
 
         for i in 0..5u8 {
-            let id_str = soroban_sdk::String::from_str(&t.env, &format!("q{i}"));
+            let id_str = std::format!("q{i}");
             let id = Symbol::new(&t.env, &id_str);
             t.client().register(
                 &id, &t.owner,

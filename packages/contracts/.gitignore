@@ -1,1 +1,4 @@
 target/
+
+# Soroban test-host state snapshots — regenerated on every `cargo test` run.
+test_snapshots/

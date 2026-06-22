@@ -1,0 +1,170 @@
+name: Contract Tests
+
+# Automated test, lint, upgrade-safety, fuzz, and WASM-build pipeline for the
+# Soroban smart contracts. Runs on every push/PR that touches the contracts.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/contracts/**"
+      - ".github/workflows/contract-tests.yml"
+  pull_request:
+    paths:
+      - "packages/contracts/**"
+      - ".github/workflows/contract-tests.yml"
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: packages/contracts
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Full test suite (unit tests, upgrade framework, property tests).
+  # ---------------------------------------------------------------------------
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            packages/contracts/target
+          key: ${{ runner.os }}-contracts-${{ hashFiles('packages/contracts/**/Cargo.toml', 'packages/contracts/Cargo.lock') }}
+
+      - name: Run workspace tests (unit + upgrade framework + property tests)
+        run: cargo test --workspace
+
+  # ---------------------------------------------------------------------------
+  # Lint (fmt + clippy). Non-blocking for now: surfaces issues without gating
+  # the pipeline on the repository's pre-existing formatting/lint debt.
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Format check
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets
+
+  # ---------------------------------------------------------------------------
+  # Upgrade-safety gate: runs only the contract-upgrade testing framework and
+  # the migration property tests, so a failure here points straight at an
+  # upgrade/backward-compatibility regression.
+  # ---------------------------------------------------------------------------
+  upgrade-safety:
+    name: Upgrade safety
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            packages/contracts/target
+          key: ${{ runner.os }}-contracts-${{ hashFiles('packages/contracts/**/Cargo.toml', 'packages/contracts/Cargo.lock') }}
+
+      - name: State migration & backward-compatibility tests (registry + market)
+        run: |
+          cargo test -p bluecollar-registry test::
+          cargo test -p bluecollar-market  test::upgrade_framework
+
+      - name: Migration property tests
+        run: cargo test -p bluecollar-fuzz --test upgrade_fuzz
+
+  # ---------------------------------------------------------------------------
+  # Property-based fuzzing (time-boxed; deterministic under the proptest harness).
+  # ---------------------------------------------------------------------------
+  fuzz:
+    name: Property fuzz
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            packages/contracts/target
+          key: ${{ runner.os }}-contracts-${{ hashFiles('packages/contracts/**/Cargo.toml', 'packages/contracts/Cargo.lock') }}
+
+      - name: Run property fuzz tests
+        # More proptest cases in CI than the default for deeper coverage.
+        env:
+          PROPTEST_CASES: "512"
+        run: cargo test -p bluecollar-fuzz --tests
+
+  # ---------------------------------------------------------------------------
+  # Release WASM build — guarantees the contracts still compile to the wasm32
+  # target an upgrade will actually deploy.
+  # ---------------------------------------------------------------------------
+  wasm-build:
+    name: WASM release build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable toolchain with wasm target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            packages/contracts/target
+          key: ${{ runner.os }}-contracts-wasm-${{ hashFiles('packages/contracts/**/Cargo.toml', 'packages/contracts/Cargo.lock') }}
+      - name: Build release WASM
+        run: make build
+      - name: Upload WASM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-wasm
+          path: packages/contracts/target/wasm32-unknown-unknown/release/*.wasm
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # Coverage report (non-blocking).
+  # ---------------------------------------------------------------------------
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Generate coverage
+        run: cargo llvm-cov --workspace --lcov --output-path lcov.info
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-coverage
+          path: packages/contracts/lcov.info

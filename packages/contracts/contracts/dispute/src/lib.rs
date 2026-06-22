@@ -54,6 +54,12 @@ pub enum DisputeOutcome {
     ReleaseWorker = 1,
     /// Funds split between parties.
     PartialRefund = 2,
+    /// No outcome yet — the dispute has not been resolved.
+    ///
+    /// Used instead of `Option<DisputeOutcome>` because a `#[contracttype]`
+    /// struct field of type `Option<custom-enum>` fails to derive the required
+    /// `ScVal` conversions under the `alloc` feature.
+    Unresolved = 3,
 }
 
 /// On-chain dispute record stored in persistent contract storage.
@@ -72,8 +78,8 @@ pub struct Dispute {
     pub amount: i128,
     /// Current status of the dispute.
     pub status: DisputeStatus,
-    /// Resolution outcome (only set when status == Resolved).
-    pub outcome: Option<DisputeOutcome>,
+    /// Resolution outcome. `DisputeOutcome::Unresolved` until `status == Resolved`.
+    pub outcome: DisputeOutcome,
     /// Arbitrator who resolved the dispute.
     pub arbitrator: Option<Address>,
     /// Unix timestamp when dispute was filed.
@@ -223,7 +229,7 @@ impl DisputeContract {
             token,
             amount,
             status: DisputeStatus::Filed,
-            outcome: None,
+            outcome: DisputeOutcome::Unresolved,
             arbitrator: None,
             filed_at: env.ledger().timestamp(),
             resolved_at: None,
@@ -322,7 +328,7 @@ impl DisputeContract {
         );
 
         dispute.status = DisputeStatus::Resolved;
-        dispute.outcome = Some(outcome);
+        dispute.outcome = outcome;
         dispute.arbitrator = Some(arbitrator.clone());
         dispute.resolved_at = Some(env.ledger().timestamp());
 

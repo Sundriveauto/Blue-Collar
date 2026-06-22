@@ -331,3 +331,102 @@ For major breaking changes where backward compatibility is not feasible:
 11.[ ] Update CHANGELOG.md with upgrade details and new WASM hash
 12.[ ] Update contract addresses table in packages/contracts/README.md
 ```
+
+---
+
+## Automated Upgrade Testing Framework
+
+Every upgrade is gated by an automated test framework whose job is to give a
+contract administrator confidence that an upgrade **preserves all existing data
+and functionality** before it ever reaches testnet or mainnet. It is organized
+into four pillars.
+
+### Where the tests live
+
+| Layer | Location | Runs under |
+|-------|----------|-----------|
+| Upgrade framework (registry) | `contracts/registry/src/test.rs` | `cargo test` |
+| Upgrade framework (market) | `contracts/market/src/test.rs` (`mod upgrade_framework`) | `cargo test` |
+| Migration property tests | `contracts/fuzz/tests/upgrade_fuzz.rs` | `cargo test` |
+| Coverage-guided migration fuzzer | `contracts/fuzz/fuzz_targets/fuzz_migrate.rs` | `cargo +nightly fuzz` |
+
+The framework files are wired into their crates via `#[cfg(test)] mod test;`,
+so they compile and run as part of the normal test suite.
+
+### The four pillars
+
+1. **State-migration testing** — `migrate` is run over populated state and every
+   stored field (workers, escrows, reputation, role membership) is asserted
+   unchanged; the schema version must advance by exactly one. Replay and
+   out-of-order migrations are rejected (`"Wrong schema version"`).
+
+2. **Backward-compatibility verification** — records and role memberships written
+   by the *old* code are read back after a migration to prove storage-key/layout
+   compatibility, a fresh deploy reports schema version `1`, and the
+   `migrate` / `upgrade` / `propose_upgrade` entry points are pinned to their
+   exact argument shapes (a signature change fails the build).
+
+3. **Performance-regression testing** — core operations (`register`, `migrate`,
+   `create_escrow`) are run with `env.budget().reset_default()` and their CPU and
+   memory cost is asserted to stay under a ceiling with a few-x headroom over the
+   observed baseline, so an upgrade cannot silently regress gas usage.
+
+4. **Security-regression testing** — `upgrade` requires the stored admin to hold
+   `ROLE_UPGRADER`, `migrate` requires `ROLE_ADMIN`, the 48-hour upgrade timelock
+   cannot be executed early, and only one upgrade may be pending at a time.
+
+### Fuzz testing
+
+- **Property-based** (`proptest`, deterministic, no nightly): `upgrade_fuzz.rs`
+  drives `migrate` over randomized worker/escrow state and checks the
+  preservation + version-bump invariant. The other property suites
+  (`registry_fuzz.rs`, `market_fuzz.rs`) fuzz the non-upgrade entry points.
+- **Coverage-guided** (`libFuzzer`, nightly): the `fuzz_register`, `fuzz_tip`,
+  and `fuzz_migrate` targets are gated behind the `fuzzing` Cargo feature so they
+  never break the normal build.
+
+### Running locally
+
+```bash
+cd packages/contracts
+
+# Full suite: unit tests + upgrade framework + property tests
+make test                 # == cargo test --workspace
+
+# Just the upgrade framework
+cargo test -p bluecollar-registry test::
+cargo test -p bluecollar-market  test::upgrade_framework
+cargo test -p bluecollar-fuzz --test upgrade_fuzz
+
+# Property fuzzing (more cases = deeper coverage)
+PROPTEST_CASES=512 make fuzz
+
+# Coverage-guided fuzzing (needs nightly + cargo-fuzz)
+make fuzz-migrate
+
+# Coverage report (fails under 80% line coverage)
+make coverage
+```
+
+### Continuous integration
+
+`.github/workflows/contract-tests.yml` runs on every push/PR that touches
+`packages/contracts/**`:
+
+| Job | Gate | What it does |
+|-----|------|--------------|
+| `test` | blocking | `cargo test --workspace` |
+| `upgrade-safety` | blocking | runs only the upgrade framework + migration property tests |
+| `fuzz` | blocking | property fuzzing with `PROPTEST_CASES=512` |
+| `wasm-build` | blocking | builds + uploads the release WASM (`make build`) |
+| `lint` | non-blocking | `cargo fmt --check`, `cargo clippy` |
+| `coverage` | non-blocking | `cargo llvm-cov` report artifact |
+
+### Real WASM-swap simulation
+
+The in-process Soroban test host cannot install a WASM blob from a dummy hash, so
+the unit-level tests verify the *data-integrity path* of an upgrade via `migrate`.
+A full WASM swap (`env.deployer().upload_contract_wasm(...)` followed by
+`upgrade`) is exercised against the actual compiled bytecode by the
+`wasm-build` job's artifact and on testnet during the dry run in the
+[Pre-Upgrade Testing Checklist](#pre-upgrade-testing-checklist).

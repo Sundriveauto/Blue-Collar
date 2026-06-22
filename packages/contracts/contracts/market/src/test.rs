@@ -1,4 +1,5 @@
 #![cfg(test)]
+extern crate std;
 
 use super::*;
 use soroban_sdk::{
@@ -28,7 +29,7 @@ fn setup() -> (Env, Address, Address, Address, Address, Address) {
 }
 
 fn deploy(env: &Env) -> Address {
-    env.register(MarketContract, ())
+    env.register_contract(None, MarketContract)
 }
 
 fn init(env: &Env, contract: &Address, admin: &Address, fee_bps: u32, fee_recipient: &Address) {
@@ -61,9 +62,11 @@ fn test_initialize_success() {
     let contract = deploy(&env);
     init(&env, &contract, &admin, 100, &fee_recipient);
 
-    let config = MarketContractClient::new(&env, &contract).get_config();
+    let client = MarketContractClient::new(&env, &contract);
+    let config = client.get_config();
     assert_eq!(config.fee_bps, 100);
-    assert_eq!(config.admin, admin);
+    // Admin is stored separately from `Config`, not as a field on it.
+    assert_eq!(client.get_admin(), admin);
     assert_eq!(config.fee_recipient, fee_recipient);
 }
 
@@ -176,7 +179,8 @@ fn test_update_fee_success() {
     init(&env, &contract, &admin, 100, &fee_recipient);
 
     let client = MarketContractClient::new(&env, &contract);
-    client.update_fee(&admin, &200);
+    // `update_fee` reads the admin from storage; it takes only the new fee.
+    client.update_fee(&200);
     assert_eq!(client.get_config().fee_bps, 200);
 }
 
@@ -186,7 +190,7 @@ fn test_update_fee_too_high() {
     let (env, admin, fee_recipient, _from, _to, _token) = setup();
     let contract = deploy(&env);
     init(&env, &contract, &admin, 100, &fee_recipient);
-    MarketContractClient::new(&env, &contract).update_fee(&admin, &501);
+    MarketContractClient::new(&env, &contract).update_fee(&501);
 }
 
 // ---------------------------------------------------------------------------
@@ -442,4 +446,135 @@ fn test_get_escrow_nonexistent_returns_none() {
     let contract = deploy(&env);
     init(&env, &contract, &admin, 0, &fee_recipient);
     assert!(MarketContractClient::new(&env, &contract).get_escrow(&Symbol::new(&env, "nope")).is_none());
+}
+
+// ===========================================================================
+// Contract-upgrade testing framework (Market)
+// ===========================================================================
+//
+// Mirrors the Registry upgrade framework in `registry/src/test.rs`:
+//   1. state_migration     — escrow state survives a migration; version bumps.
+//   2. backward_compat      — pre-upgrade escrows stay readable; signatures stable.
+//   3. perf_regression      — core ops stay within a CPU/memory budget.
+//   4. security_regression  — upgrade/migrate keep their authorization guards.
+//
+// A real WASM-swap upgrade is exercised in the `wasm-upgrade-tests` feature
+// build, since the in-process host cannot install a WASM blob from a dummy hash.
+
+#[cfg(test)]
+mod upgrade_framework {
+    use super::*;
+    use soroban_sdk::BytesN;
+
+    /// A market contract with a funded token, an open escrow, and the admin
+    /// holding ROLE_UPGRADER.
+    struct UpgradeFixture {
+        env: Env,
+        contract: Address,
+        admin: Address,
+        from: Address,
+        to: Address,
+        token: Address,
+        escrow_id: Symbol,
+    }
+
+    impl UpgradeFixture {
+        fn new() -> Self {
+            let (env, admin, fee_recipient, from, to, token) = setup();
+            let contract = deploy(&env);
+            init(&env, &contract, &admin, 0, &fee_recipient);
+
+            let client = MarketContractClient::new(&env, &contract);
+            client.grant_role(&admin, &Symbol::new(&env, ROLE_UPGRADER), &admin);
+
+            let escrow_id = Symbol::new(&env, "esc1");
+            client.create_escrow(&escrow_id, &from, &to, &token, &1_000, &9_999);
+
+            UpgradeFixture { env, contract, admin, from, to, token, escrow_id }
+        }
+
+        fn client(&self) -> MarketContractClient {
+            MarketContractClient::new(&self.env, &self.contract)
+        }
+    }
+
+    // -- 1. state migration --------------------------------------------------
+
+    #[test]
+    fn migration_preserves_escrow_state() {
+        let f = UpgradeFixture::new();
+        let before = f.client().get_escrow(&f.escrow_id).unwrap();
+        assert_eq!(f.client().get_schema_version(), 1);
+
+        f.client().migrate(&f.admin, &1u32);
+
+        let after = f.client().get_escrow(&f.escrow_id).unwrap();
+        assert_eq!(after.amount, before.amount);
+        assert_eq!(after.expiry, before.expiry);
+        assert_eq!(after.released, before.released);
+        assert_eq!(after.cancelled, before.cancelled);
+        assert_eq!(f.client().get_schema_version(), 2);
+    }
+
+    #[test]
+    #[should_panic(expected = "Wrong schema version")]
+    fn migration_is_not_replayable() {
+        let f = UpgradeFixture::new();
+        f.client().migrate(&f.admin, &1u32);
+        f.client().migrate(&f.admin, &1u32);
+    }
+
+    // -- 2. backward compatibility ------------------------------------------
+
+    #[test]
+    fn escrow_released_after_migration_pays_worker() {
+        let f = UpgradeFixture::new();
+        f.client().migrate(&f.admin, &1u32);
+
+        // The escrow created pre-migration is still operable post-migration.
+        f.client().release_escrow(&f.escrow_id, &f.from);
+        assert_eq!(TokenClient::new(&f.env, &f.token).balance(&f.to), 1_000);
+        assert!(f.client().get_escrow(&f.escrow_id).unwrap().released);
+    }
+
+    // -- 3. performance regression ------------------------------------------
+
+    #[test]
+    fn create_escrow_within_budget() {
+        let (env, admin, fee_recipient, from, to, token) = setup();
+        let contract = deploy(&env);
+        init(&env, &contract, &admin, 0, &fee_recipient);
+        let client = MarketContractClient::new(&env, &contract);
+
+        env.budget().reset_default();
+        client.create_escrow(&Symbol::new(&env, "p1"), &from, &to, &token, &1_000, &9_999);
+        let cpu = env.budget().cpu_instruction_cost();
+        let mem = env.budget().memory_bytes_cost();
+        std::println!("create_escrow cost: cpu={cpu} mem={mem}");
+        // Observed ~214k CPU / ~34k mem (includes a token transfer); the
+        // ceilings give ~4-6x headroom to flag a material regression.
+        assert!(cpu < 1_200_000, "create_escrow CPU regression: {cpu}");
+        assert!(mem < 250_000, "create_escrow memory regression: {mem}");
+    }
+
+    // -- 4. security / authorization regression -----------------------------
+
+    #[test]
+    #[should_panic(expected = "Missing role")]
+    fn upgrade_requires_upgrader_role() {
+        // Admin is initialized with ROLE_ADMIN but never granted ROLE_UPGRADER.
+        let (env, admin, fee_recipient, _from, _to, _token) = setup();
+        let contract = deploy(&env);
+        init(&env, &contract, &admin, 0, &fee_recipient);
+        let hash = BytesN::from_array(&env, &[1u8; 32]);
+        MarketContractClient::new(&env, &contract).upgrade(&hash);
+    }
+
+    #[test]
+    #[should_panic(expected = "Missing role")]
+    fn migrate_requires_admin() {
+        let f = UpgradeFixture::new();
+        let stranger = Address::generate(&f.env);
+        f.client().migrate(&stranger, &1u32);
+    }
 }

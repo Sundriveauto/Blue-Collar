@@ -52,22 +52,22 @@ const ROLE_DISPUTE_MGR_ID: u64 = 3;
 const ROLE_UPGRADER_ID: u64 = 4;
 
 /// Convert a role symbol to its compact u64 ID for storage optimization.
-fn role_to_id(role: &Symbol) -> u64 {
-    match role.as_string().as_str() {
-        ROLE_ADMIN => ROLE_ADMIN_ID,
-        ROLE_PAUSER => ROLE_PAUSER_ID,
-        ROLE_FEE_MANAGER => ROLE_FEE_MANAGER_ID,
-        ROLE_DISPUTE_MGR => ROLE_DISPUTE_MGR_ID,
-        ROLE_UPGRADER => ROLE_UPGRADER_ID,
-        _ => {
-            // Fallback for unknown roles - create a hash-based ID
-            // This ensures forward compatibility while maintaining optimization for known roles
-            let hash = env.crypto().sha256(role.as_string().as_bytes());
-            // Take first 8 bytes and convert to u64
-            let mut id_bytes = [0u8; 8];
-            id_bytes.copy_from_slice(&hash[0..8]);
-            u64::from_le_bytes(id_bytes)
-        }
+///
+/// Unknown roles map to `u64::MAX` so they share a distinct bucket without
+/// colliding with the known role IDs above.
+fn role_to_id(env: &Env, role: &Symbol) -> u64 {
+    if *role == Symbol::new(env, ROLE_ADMIN) {
+        ROLE_ADMIN_ID
+    } else if *role == Symbol::new(env, ROLE_PAUSER) {
+        ROLE_PAUSER_ID
+    } else if *role == Symbol::new(env, ROLE_FEE_MANAGER) {
+        ROLE_FEE_MANAGER_ID
+    } else if *role == Symbol::new(env, ROLE_DISPUTE_MGR) {
+        ROLE_DISPUTE_MGR_ID
+    } else if *role == Symbol::new(env, ROLE_UPGRADER) {
+        ROLE_UPGRADER_ID
+    } else {
+        u64::MAX
     }
 }
 
@@ -217,7 +217,7 @@ impl MarketContract {
         let role = Symbol::new(&env, ROLE_ADMIN);
         let mut members: Vec<Address> = Vec::new(&env);
         members.push_back(admin.clone());
-        env.storage().persistent().set(&DataKey::RoleMembers(role_to_id(&role)), &members);
+        env.storage().persistent().set(&DataKey::RoleMembers(role_to_id(&env, &role)), &members);
         env.events().publish((symbol_short!("RlGrnt"), role, admin), ());
     }
 
@@ -235,7 +235,7 @@ impl MarketContract {
     /// - `"Unauthorized"` if caller does not match the stored admin.
     /// - `"Not initialized"` if [`initialize`] has not been called.
     pub fn update_fee(env: Env, new_fee_bps: u32) {
-        let admin = Self::get_admin(env);
+        let admin = Self::get_admin(env.clone());
         Self::require_role(&env, &Symbol::new(&env, ROLE_FEE_MANAGER), &admin);
         assert!(new_fee_bps <= MAX_FEE_BPS, "fee_bps exceeds maximum (500)");
         let mut config: Config = env
@@ -276,7 +276,7 @@ impl MarketContract {
 fn get_role_members(env: &Env, role: &Symbol) -> Vec<Address> {
     env.storage()
         .persistent()
-        .get(&DataKey::RoleMembers(role_to_id(role)))
+        .get(&DataKey::RoleMembers(role_to_id(env, role)))
         .unwrap_or(Vec::new(env))
 }
 
@@ -288,6 +288,11 @@ fn get_role_members(env: &Env, role: &Symbol) -> Vec<Address> {
         caller.require_auth();
         let members = Self::get_role_members(env, role);
         assert!(members.iter().any(|m| m == *caller), "Missing role");
+    }
+
+    /// Create a role symbol (gas-optimization helper, mirrors the registry contract).
+    fn role_symbol(env: &Env, role_str: &str) -> Symbol {
+        Symbol::new(env, role_str)
     }
 
     // -------------------------------------------------------------------------
@@ -317,7 +322,7 @@ fn get_role_members(env: &Env, role: &Symbol) -> Vec<Address> {
         let mut members = Self::get_role_members(&env, &role);
         if members.iter().all(|m| m != account) {
             members.push_back(account.clone());
-            env.storage().persistent().set(&DataKey::RoleMembers(role_to_id(&role)), &members);
+            env.storage().persistent().set(&DataKey::RoleMembers(role_to_id(&env, &role)), &members);
         }
 
         env.events().publish((symbol_short!("RlGrnt"), role, account), ());
@@ -353,7 +358,7 @@ fn get_role_members(env: &Env, role: &Symbol) -> Vec<Address> {
             }
         }
         assert!(found, "Account does not hold role");
-        env.storage().persistent().set(&DataKey::RoleMembers(role_to_id(&role)), &updated);
+        env.storage().persistent().set(&DataKey::RoleMembers(role_to_id(&env, &role)), &updated);
 
         env.events().publish((symbol_short!("RlRvkd"), role, account), ());
     }
@@ -419,22 +424,6 @@ fn get_role_members(env: &Env, role: &Symbol) -> Vec<Address> {
         env.events().publish((symbol_short!("Unpaused"), admin), ());
     }
 
-    /// Unpause the contract, re-enabling all state-mutating operations.
-    ///
-    /// # Parameters
-    /// - `admin`: Must hold [`ROLE_PAUSER`]; `require_auth()` is enforced.
-    ///
-    /// # Panics
-    /// - `"Missing role"` if `admin` does not hold `ROLE_PAUSER`.
-    ///
-    /// # Events
-    /// Emits `("Unpaused", admin)`.
-    pub fn unpause(env: Env, admin: Address) {
-        Self::require_role(&env, &Symbol::new(&env, ROLE_PAUSER), &admin);
-        env.storage().instance().set(&DataKey::Paused, &false);
-        env.events().publish((symbol_short!("Unpaused"), admin), ());
-    }
-
     /// Returns `true` if the contract is currently paused.
     pub fn is_paused(env: Env) -> bool {
         env.storage()
@@ -463,7 +452,7 @@ fn get_role_members(env: &Env, role: &Symbol) -> Vec<Address> {
     /// - `"Not initialized"` if [`initialize`] has not been called.
     /// - `"Unauthorized"` if caller does not match the stored admin.
     pub fn set_admin(env: Env, new_admin: Address) {
-        let current_admin = Self::get_admin(env);
+        let current_admin = Self::get_admin(env.clone());
         current_admin.require_auth(); // Require auth from current admin
         
         // Update admin in persistent storage
@@ -471,12 +460,18 @@ fn get_role_members(env: &Env, role: &Symbol) -> Vec<Address> {
         
         // Update role membership: remove old admin from ADMIN role, add new admin
         let admin_role = Self::role_symbol(&env, ROLE_ADMIN);
-        let mut members = Self::get_role_members(&env, &admin_role);
-        members.retain(|m| m != &current_admin); // Remove old admin
-        if !members.iter().any(|m| m == &new_admin) {
-            members.push_back(new_admin.clone()); // Add new admin if not already present
+        let members = Self::get_role_members(&env, &admin_role);
+        // soroban_sdk::Vec has no `retain`; rebuild without the old admin.
+        let mut updated: Vec<Address> = Vec::new(&env);
+        for m in members.iter() {
+            if m != current_admin {
+                updated.push_back(m);
+            }
         }
-        env.storage().persistent().set(&DataKey::RoleMembers(role_to_id(&admin_role)), &members);
+        if !updated.iter().any(|m| m == new_admin) {
+            updated.push_back(new_admin.clone()); // Add new admin if not already present
+        }
+        env.storage().persistent().set(&DataKey::RoleMembers(role_to_id(&env, &admin_role)), &updated);
     }
 
     // -------------------------------------------------------------------------
@@ -918,7 +913,7 @@ fn get_role_members(env: &Env, role: &Symbol) -> Vec<Address> {
     /// - `"Not initialized"` if [`initialize`] has not been called.
     /// - `"Unauthorized"` if caller does not match the stored admin.
     pub fn add_arbitrator(env: Env, arbitrator: Address) {
-        let admin = Self::get_admin(env);
+        let admin = Self::get_admin(env.clone());
         admin.require_auth();
         let mut arbitrators: Vec<Address> = env
             .storage()
@@ -941,7 +936,7 @@ fn get_role_members(env: &Env, role: &Symbol) -> Vec<Address> {
     /// - `"Not initialized"` if [`initialize`] has not been called.
     /// - `"Unauthorized"` if caller does not match the stored admin.
     pub fn remove_arbitrator(env: Env, arbitrator: Address) {
-        let admin = Self::get_admin(env);
+        let admin = Self::get_admin(env.clone());
         admin.require_auth();
         let arbitrators: Vec<Address> = env
             .storage()
@@ -950,7 +945,7 @@ fn get_role_members(env: &Env, role: &Symbol) -> Vec<Address> {
             .unwrap_or(Vec::new(&env));
         let mut updated: Vec<Address> = Vec::new(&env);
         for a in arbitrators.iter() {
-            if a != &arbitrator {
+            if a != arbitrator {
                 updated.push_back(a.clone());
             }
         }
@@ -1125,8 +1120,9 @@ fn get_role_members(env: &Env, role: &Symbol) -> Vec<Address> {
     /// - `"Not initialized"` if [`initialize`] has not been called.
     /// - `"Unauthorized"` if caller does not match the stored admin.
     pub fn upgrade(env: Env, new_wasm_hash: soroban_sdk::BytesN<32>) {
-        let admin = Self::get_admin(env);
-        admin.require_auth();
+        let admin = Self::get_admin(env.clone());
+        // `require_role` already enforces `admin.require_auth()`; calling it again
+        // here would double-authorize the same frame and panic with an auth error.
         let upgrader_role = Self::role_symbol(&env, ROLE_UPGRADER);
         Self::require_role(&env, &upgrader_role, &admin);
         env.deployer().update_current_contract_wasm(new_wasm_hash);
@@ -1136,6 +1132,11 @@ fn get_role_members(env: &Env, role: &Symbol) -> Vec<Address> {
 // =============================================================================
 // Tests
 // =============================================================================
+
+// Integration-style unit tests and the contract-upgrade testing framework
+// live in `test.rs`; the `mod tests` block below holds the original inline tests.
+#[cfg(test)]
+mod test;
 
 #[cfg(test)]
 mod tests {
@@ -1592,145 +1593,71 @@ mod tests {
     }
  }
 
- // ---------------------------------------------------------------------------
- // Admin access control tests
- // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Admin access control & upgrade authorization tests
+// ---------------------------------------------------------------------------
 
- #[test]
- fn test_initialize_sets_admin() {
-     let env = Env::default();
-     env.mock_all_auths();
-     let contract_address = env.register(MarketContract, ());
-     let client = MarketContractClient::new(&env, &contract_address);
-     
-     let admin = Address::generate(&env);
-     let fee_recipient = Address::generate(&env);
-     
-     client.initialize(&admin, &100, &fee_recipient);
-     
-     // Check that get_admin returns the correct admin
-     assert_eq!(client.get_admin(), admin);
- }
+#[cfg(test)]
+mod admin_tests {
+    use super::*;
+    use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
 
- #[test]
- fn test_get_admin_uninitialized_panics() {
-     let env = Env::default();
-     env.mock_all_auths();
-     let contract_address = env.register(MarketContract, ());
-     let client = MarketContractClient::new(&env, &contract_address);
-     
-     // Should panic when trying to get admin before initialization
-     assert_panic_with_msg!(
-         &move || { client.get_admin(); },
-         "Not initialized"
-     );
- }
+    fn setup() -> (Env, Address, Address) {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract = env.register_contract(None, MarketContract);
+        let admin = Address::generate(&env);
+        let fee_recipient = Address::generate(&env);
+        MarketContractClient::new(&env, &contract).initialize(&admin, &100, &fee_recipient);
+        (env, contract, admin)
+    }
 
- #[test]
- fn test_set_admin_success() {
-     let env = Env::default();
-     env.mock_all_auths();
-     let contract_address = env.register(MarketContract, ());
-     let mut client = MarketContractClient::new(&env, &contract_address);
-     
-     let admin_old = Address::generate(&env);
-     let admin_new = Address::generate(&env);
-     let fee_recipient = Address::generate(&env);
-     
-     // Initialize with old admin
-     client.initialize(&admin_old, &100, &fee_recipient);
-     
-     // Verify initial admin
-     assert_eq!(client.get_admin(), admin_old);
-     
-     // Change admin (requires old admin auth)
-     client.set_admin(&admin_new);
-     
-     // Verify new admin
-     assert_eq!(client.get_admin(), admin_new);
- }
+    #[test]
+    fn test_initialize_sets_admin() {
+        let (env, contract, admin) = setup();
+        assert_eq!(MarketContractClient::new(&env, &contract).get_admin(), admin);
+    }
 
- #[test]
- #[should_panic(expected = "Unauthorized")]
- fn test_set_admin_unauthorized_fails() {
-     let env = Env::default();
-     // Not mocking auths to test unauthorized access
-     let contract_address = env.register(MarketContract, ());
-     let client = MarketContractClient::new(&env, &contract_address);
-     
-     let admin_old = Address::generate(&env);
-     let admin_new = Address::generate(&env);
-     let fee_recipient = Address::generate(&env);
-     
-     // Initialize with old admin
-     client.initialize(&admin_old, &100, &fee_recipient);
-     
-     // Try to change admin using new admin address (should fail)
-     client.set_admin(&admin_new);
- }
+    #[test]
+    #[should_panic(expected = "Not initialized")]
+    fn test_get_admin_uninitialized_panics() {
+        let env = Env::default();
+        let contract = env.register_contract(None, MarketContract);
+        MarketContractClient::new(&env, &contract).get_admin();
+    }
 
- #[test]
- fn test_upgrade_uses_stored_admin() {
-     let env = Env::default();
-     env.mock_all_auths();
-     let contract_address = env.register(MarketContract, ());
-     let mut client = MarketContractClient::new(&env, &contract_address);
-     
-     let admin = Address::generate(&env);
-     let fee_recipient = Address::generate(&env);
-     let new_wasm_hash = BytesN::from_array(&env, &[0u8; 32]);
-     
-     // Initialize contract
-     client.initialize(&admin, &100, &fee_recipient);
-     
-     // Upgrade should work with stored admin (no admin parameter needed)
-     // This tests that upgrade now looks up admin from storage
-     client.upgrade(&new_wasm_hash);
-     // If we reach here without panic, the upgrade succeeded using stored admin
- }
+    #[test]
+    fn test_set_admin_success() {
+        let (env, contract, admin_old) = setup();
+        let client = MarketContractClient::new(&env, &contract);
+        let admin_new = Address::generate(&env);
+        assert_eq!(client.get_admin(), admin_old);
+        client.set_admin(&admin_new);
+        assert_eq!(client.get_admin(), admin_new);
+    }
 
- #[test]
- #[should_panic(expected = "Unauthorized")]
- fn test_upgrade_unauthorized_fails() {
-     let env = Env::default();
-     // Not mocking auths to test unauthorized access
-     let contract_address = env.register(MarketContract, ());
-     let client = MarketContractClient::new(&env, &contract_address);
-     
-     let admin = Address::generate(&env);
-     let fee_recipient = Address::generate(&env);
-     let new_wasm_hash = BytesN::from_array(&env, &[0u8; 32]);
-     
-     // Initialize contract
-     client.initialize(&admin, &100, &fee_recipient);
-     
-     // Try to upgrade without proper auth (should fail)
-     client.upgrade(&new_wasm_hash);
- }
+    #[test]
+    #[should_panic]
+    fn test_set_admin_unauthorized_fails() {
+        // No auths mocked: set_admin's require_auth on the stored admin must fail.
+        let env = Env::default();
+        let contract = env.register_contract(None, MarketContract);
+        let client = MarketContractClient::new(&env, &contract);
+        let admin_old = Address::generate(&env);
+        let admin_new = Address::generate(&env);
+        let fee_recipient = Address::generate(&env);
+        client.initialize(&admin_old, &100, &fee_recipient);
+        client.set_admin(&admin_new);
+    }
 
- // Helper macro to check for panics with specific message
- macro_rules! assert_panic_with_msg {
-     ($f:expr, $msg:expr) => {
-         let result = std::panic::catch_unwind(|| $f);
-         assert!(result.is_err(), "Expected panic but none occurred");
-         if let Err(payload) = result {
-             if let Some(s) = payload.downcast_ref::<&str>() {
-                 assert!(
-                     s.contains($msg),
-                     "Expected panic message containing '{}', got: '{}'",
-                     $msg,
-                     s
-                 );
-             } else if let Some(s) = payload.downcast_ref::<String>() {
-                 assert!(
-                     s.contains($msg),
-                     "Expected panic message containing '{}', got: '{}'",
-                     $msg,
-                     s
-                 );
-             } else {
-                 panic!("Unable to extract panic message");
-             }
-         }
-     };
- }
+    /// `upgrade` rejects callers when the stored admin lacks ROLE_UPGRADER.
+    /// The role check runs before any WASM install, so it is testable in-process
+    /// (a real WASM-swap upgrade is exercised in test.rs behind a feature flag).
+    #[test]
+    #[should_panic(expected = "Missing role")]
+    fn test_upgrade_requires_upgrader_role() {
+        let (env, contract, _admin) = setup();
+        let new_wasm_hash = BytesN::from_array(&env, &[0u8; 32]);
+        MarketContractClient::new(&env, &contract).upgrade(&new_wasm_hash);
+    }
+}

@@ -442,6 +442,19 @@ model WorkerAnalytics {
   updatedAt     DateTime @updatedAt
   worker        Worker   @relation(fields: [workerId], references: [id], onDelete: Cascade)
 }
+
+model SearchAnalytics {
+  id           String   @id @default(cuid())
+  query        String
+  resultsCount Int      @default(0)
+  hasFilters   Boolean  @default(false)
+  ipAddress    String?
+  createdAt    DateTime @default(now())
+
+  @@index([query])
+  @@index([createdAt])
+}
+
 // ─── Issue #511: Refresh Token Rotation ──────────────────────────────────────
 
 model RefreshToken {

@@ -32,6 +32,11 @@ pacts/
 # Rust build artifacts
 packages/contracts/target/
 
+
+
+
+
+
 # OS files
 Thumbs.db
 

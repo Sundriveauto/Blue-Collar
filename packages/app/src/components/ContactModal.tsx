@@ -67,14 +67,17 @@ export default function ContactModal({ workerId, workerName }: Props) {
                 Send a message to get in touch.
               </Dialog.Description>
             </div>
-            <Dialog.Close className="rounded-md p-1 text-gray-400 hover:text-gray-600 transition-colors">
-              <X size={18} />
+            <Dialog.Close
+              aria-label="Close dialog"
+              className="rounded-md p-1 text-gray-400 hover:text-gray-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            >
+              <X size={18} aria-hidden="true" />
             </Dialog.Close>
           </div>
 
           {status === "success" ? (
-            <div className="mt-6 flex flex-col items-center gap-3 py-4 text-center">
-              <CheckCircle2 size={36} className="text-green-500" />
+            <div role="status" className="mt-6 flex flex-col items-center gap-3 py-4 text-center">
+              <CheckCircle2 size={36} className="text-green-500" aria-hidden="true" />
               <p className="text-sm font-medium text-gray-800">Message sent!</p>
               <p className="text-xs text-gray-500">
                 {workerName} will be notified and may reach out to you.
@@ -99,11 +102,14 @@ export default function ContactModal({ workerId, workerName }: Props) {
                 />
                 <div className="mt-1 flex justify-between">
                   {error ? (
-                    <p className="text-xs text-red-500">{error}</p>
+                    <p role="alert" className="text-xs text-red-500">{error}</p>
                   ) : (
                     <span />
                   )}
-                  <span className={`text-xs ${message.length > 1000 ? "text-red-500" : "text-gray-400"}`}>
+                  <span
+                    aria-live="polite"
+                    className={`text-xs ${message.length > 1000 ? "text-red-500" : "text-gray-400"}`}
+                  >
                     {message.length}/1000
                   </span>
                 </div>

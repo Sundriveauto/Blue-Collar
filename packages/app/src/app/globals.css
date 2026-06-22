@@ -1,4 +1,7 @@
 @import "tailwindcss";
+/* App-wide accessibility base styles + WCAG-AA contrast tokens. */
+@import "../styles/contrast-tokens.css";
+@import "../styles/accessibility.css";
 
 @layer base {
   :root {

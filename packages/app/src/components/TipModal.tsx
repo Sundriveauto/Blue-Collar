@@ -156,8 +156,11 @@ export default function TipModalEnhanced({ workerName, walletAddress, trigger }:
                 Reward {workerName} for excellent service
               </Dialog.Description>
             </div>
-            <Dialog.Close className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
-              <X size={20} />
+            <Dialog.Close
+              aria-label="Close dialog"
+              className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            >
+              <X size={20} aria-hidden="true" />
             </Dialog.Close>
           </div>
 

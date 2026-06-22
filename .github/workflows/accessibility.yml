@@ -1,0 +1,92 @@
+name: Accessibility
+
+# WCAG 2.1 AA accessibility checks for the web app: component-level axe unit
+# tests (blocking) and full-page axe scans via Playwright (non-blocking report).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/app/**"
+      - ".github/workflows/accessibility.yml"
+  pull_request:
+    paths:
+      - "packages/app/**"
+      - ".github/workflows/accessibility.yml"
+  workflow_dispatch:
+
+env:
+  CI: "true"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Component-level accessibility unit tests (axe-core via vitest). Blocking.
+  # ---------------------------------------------------------------------------
+  a11y-unit:
+    name: Component a11y tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run accessibility unit tests
+        run: pnpm --filter @bluecollar/app test:a11y
+
+  # ---------------------------------------------------------------------------
+  # Full-page accessibility scan (axe-core via Playwright). Non-blocking; the
+  # scan report is uploaded as an artifact for review.
+  # ---------------------------------------------------------------------------
+  a11y-e2e:
+    name: Full-page a11y scan
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm --filter @bluecollar/app exec playwright install --with-deps chromium
+
+      - name: Seed local env
+        working-directory: packages/app
+        run: cp .env.example .env.local || true
+
+      - name: Start dev server
+        working-directory: packages/app
+        run: pnpm exec next dev -p 3001 &
+
+      - name: Wait for server
+        run: npx --yes wait-on http://localhost:3001 --timeout 120000
+
+      - name: Run Playwright accessibility scan
+        working-directory: packages/app
+        env:
+          PLAYWRIGHT_BASE_URL: http://localhost:3001
+        run: pnpm exec playwright test accessibility
+
+      - name: Upload accessibility report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: accessibility-report
+          path: |
+            packages/app/playwright-report
+            packages/app/a11y-reports
+          if-no-files-found: ignore

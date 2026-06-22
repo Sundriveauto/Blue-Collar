@@ -52,6 +52,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
+        <a href="#main-content" className="skip-to-main">
+          Skip to main content
+        </a>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem storageKey="bc_theme">
           <AuthProvider>
             <WalletProvider>
@@ -59,7 +62,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                 <OfflineBanner />
                 <ServiceWorkerRegister />
                 <WebVitalsReporter />
-                {children}
+                <div id="main-content" tabIndex={-1}>
+                  {children}
+                </div>
                 <PushNotificationPrompt />
               </OnboardingProvider>
             </WalletProvider>

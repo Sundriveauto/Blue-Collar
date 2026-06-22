@@ -25,6 +25,9 @@ export default async function LocaleLayout({
   return (
     <html lang={locale} suppressHydrationWarning>
       <body>
+        <a href="#main-content" className="skip-to-main">
+          Skip to main content
+        </a>
         <NextIntlClientProvider messages={messages}>
           <ThemeProvider attribute="class" defaultTheme="system" enableSystem storageKey="bc_theme">
             <AuthProvider>
@@ -32,7 +35,9 @@ export default async function LocaleLayout({
                 <CompareProvider>
                   <WebVitalsReporter />
                   <OfflineBanner />
-                  {children}
+                  <div id="main-content" tabIndex={-1}>
+                    {children}
+                  </div>
                   <CompareDrawer />
                   <OnboardingTour />
                 </CompareProvider>

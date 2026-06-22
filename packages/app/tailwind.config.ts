@@ -5,7 +5,27 @@ const config: Config = {
   content: ['./src/**/*.{ts,tsx}'],
   theme: {
     extend: {
+      // Accessibility: media-query variants for user contrast preferences so
+      // components can opt into stronger styling, e.g. `contrast-more:border-2`.
+      screens: {
+        'contrast-more': { raw: '(prefers-contrast: more)' },
+        'contrast-less': { raw: '(prefers-contrast: less)' },
+      },
+      // WCAG-AA verified text/brand colors (see src/styles/contrast-tokens.css).
+      // `a11y` ring color is used for the keyboard focus indicator.
+      ringColor: {
+        a11y: '#2563eb',
+      },
+      outlineColor: {
+        a11y: '#2563eb',
+      },
       colors: {
+        // WCAG-AA accessible foreground tokens (>= 4.5:1 on white).
+        'text-accessible': {
+          primary: '#111827',
+          secondary: '#374151',
+          muted: '#4b5563',
+        },
         brand: {
           50:  '#eff6ff',
           100: '#dbeafe',

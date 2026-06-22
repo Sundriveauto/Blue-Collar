@@ -1,7 +1,9 @@
 /*
- * WCAG 2.1 AA Accessibility Fixes
+ * WCAG 2.1 AA accessibility base styles.
+ * Imported from app/globals.css so these rules apply app-wide.
  */
 
+/* Visible, high-contrast focus indicator for keyboard users only. */
 :focus-visible {
   outline: 3px solid #2563eb;
   outline-offset: 2px;
@@ -12,6 +14,7 @@
   outline: none;
 }
 
+/* Skip link: hidden until focused, then revealed at the top-left. */
 .skip-to-main {
   position: absolute;
   left: -9999px;
@@ -28,24 +31,51 @@
   left: 0;
 }
 
-button,
-a,
-[role="button"],
-input[type="checkbox"],
-input[type="radio"] {
-  min-height: 44px;
-  min-width: 44px;
+/*
+ * Touch-target sizing (WCAG 2.5.5). Only enforced on coarse pointers (touch)
+ * so desktop layouts and inline text links are unaffected.
+ */
+@media (pointer: coarse) {
+  button,
+  [role="button"],
+  input[type="checkbox"],
+  input[type="radio"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
 }
 
-body {
-  color: #111827;
-}
-
+/* Honor the user's reduced-motion preference. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Strengthen focus and borders when the user requests more contrast. */
+@media (prefers-contrast: more) {
+  :focus-visible {
+    outline-width: 4px;
+    outline-color: #1d4ed8;
+  }
+  *,
+  *::before,
+  *::after {
+    border-color: currentColor;
+  }
+}
+
+/*
+ * Windows High Contrast / forced-colors mode: keep focus indicators visible
+ * using system colors instead of custom ones that get overridden.
+ */
+@media (forced-colors: active) {
+  :focus-visible {
+    outline: 3px solid Highlight;
   }
 }

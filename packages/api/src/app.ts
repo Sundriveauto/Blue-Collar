@@ -29,6 +29,7 @@ import { responseSchemaVersioning } from './utils/schemaVersioning.js'
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js'
 import docsRouter from './openapi/docs.js'
 import { metricsEndpoint, metricsMiddleware } from './middleware/metrics.js'
+import { getRateLimitStatus } from './middleware/versionRateLimit.js'
 import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -172,6 +173,11 @@ app.get('/api/v2/versions', (_req, res) => {
     current: VERSION_CONFIG.current,
   })
 })
+
+// ── Rate limit status endpoints ───────────────────────────────────────────────
+app.get('/api/rate-limit', getRateLimitStatus)
+app.get('/api/v1/rate-limit', getRateLimitStatus)
+app.get('/api/v2/rate-limit', getRateLimitStatus)
 
 // ── Redirect unversioned /api/* → /api/v1/* with deprecation headers ──────────
 app.use('/api', deprecationWarning, (req, res) => {

@@ -6,7 +6,7 @@ export default function WorkersLoading() {
       <div className="mb-8 h-8 w-40 animate-pulse rounded-md bg-gray-200" />
       <div className="flex flex-col gap-8 lg:flex-row">
         {/* Sidebar skeleton */}
-        <aside className="w-full shrink-0 lg:w-60">
+        <aside className="hidden w-60 shrink-0 lg:block">
           <div className="flex flex-col gap-5 rounded-xl border bg-white p-5 shadow-sm">
             {[1, 2, 3].map((i) => (
               <div key={i} className="flex flex-col gap-2">
@@ -14,15 +14,17 @@ export default function WorkersLoading() {
                 <div className="h-9 w-full animate-pulse rounded-md bg-gray-200" />
               </div>
             ))}
-            <div className="h-9 w-full animate-pulse rounded-md bg-gray-200" />
           </div>
         </aside>
 
-        {/* Grid skeleton */}
-        <div className="flex-1 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <WorkerCardSkeleton key={i} />
-          ))}
+        {/* Search bar skeleton */}
+        <div className="flex-1">
+          <div className="mb-4 h-10 w-full animate-pulse rounded-lg bg-gray-200" />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <WorkerCardSkeleton key={i} />
+            ))}
+          </div>
         </div>
       </div>
     </div>

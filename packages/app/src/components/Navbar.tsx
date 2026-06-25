@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { Menu, Wallet, ChevronDown, User, Sun, Moon, Globe, X } from "lucide-react";
+import { Menu, Wallet, ChevronDown, User, Sun, Moon, Globe, X, MessageSquare } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useTheme } from "next-themes";
 import { useAuth } from "@/hooks/useAuth";
@@ -180,11 +180,17 @@ export default function Navbar() {
                 <DropdownMenu.Portal>
                   <DropdownMenu.Content align="end" sideOffset={6} className="z-50 min-w-[160px] rounded-md border bg-white p-1 shadow-md text-sm dark:bg-gray-900 dark:border-gray-700">
                     <DropdownMenu.Item onSelect={() => router.push("/profile")} className="cursor-pointer rounded px-3 py-2 hover:bg-gray-100 outline-none dark:hover:bg-gray-800 dark:text-gray-200">Profile</DropdownMenu.Item>
+                    <DropdownMenu.Item onSelect={() => router.push("/messages")} className="cursor-pointer rounded px-3 py-2 hover:bg-gray-100 outline-none dark:hover:bg-gray-800 dark:text-gray-200">Messages</DropdownMenu.Item>
                     {(user.role === "curator" || user.role === "admin") && (
                       <DropdownMenu.Item onSelect={() => router.push("/dashboard")} className="cursor-pointer rounded px-3 py-2 hover:bg-gray-100 outline-none dark:hover:bg-gray-800 dark:text-gray-200">Dashboard</DropdownMenu.Item>
                     )}
                     {user.role === "admin" && (
-                      <DropdownMenu.Item onSelect={() => router.push("/dashboard/admin")} className="cursor-pointer rounded px-3 py-2 hover:bg-gray-100 outline-none dark:hover:bg-gray-800 dark:text-gray-200">Admin Analytics</DropdownMenu.Item>
+                      <>
+                        <DropdownMenu.Item onSelect={() => router.push("/dashboard/admin")} className="cursor-pointer rounded px-3 py-2 hover:bg-gray-100 outline-none dark:hover:bg-gray-800 dark:text-gray-200">Admin Dashboard</DropdownMenu.Item>
+                        <DropdownMenu.Item onSelect={() => router.push("/dashboard/admin/users")} className="cursor-pointer rounded px-3 py-2 hover:bg-gray-100 outline-none dark:hover:bg-gray-800 dark:text-gray-200">User Management</DropdownMenu.Item>
+                        <DropdownMenu.Item onSelect={() => router.push("/dashboard/admin/disputes")} className="cursor-pointer rounded px-3 py-2 hover:bg-gray-100 outline-none dark:hover:bg-gray-800 dark:text-gray-200">Disputes</DropdownMenu.Item>
+                        <DropdownMenu.Item onSelect={() => router.push("/dashboard/admin/audit")} className="cursor-pointer rounded px-3 py-2 hover:bg-gray-100 outline-none dark:hover:bg-gray-800 dark:text-gray-200">Audit Log</DropdownMenu.Item>
+                      </>
                     )}
                     <DropdownMenu.Separator className="my-1 h-px bg-gray-100 dark:bg-gray-700" />
                     <DropdownMenu.Item onSelect={logout} className="cursor-pointer rounded px-3 py-2 text-red-600 hover:bg-red-50 outline-none dark:hover:bg-red-950">Logout</DropdownMenu.Item>
@@ -328,15 +334,30 @@ export default function Navbar() {
                     <User size={16} className="text-gray-400" />
                     Profile
                   </Link>
+                  <Link href="/messages" onClick={() => setMobileOpen(false)} className="flex items-center gap-3 rounded-lg px-4 py-3 text-sm min-h-[48px] hover:bg-gray-100 dark:hover:bg-gray-800 dark:text-gray-200 transition-colors">
+                    <MessageSquare size={16} className="text-gray-400" />
+                    Messages
+                  </Link>
                   {(user.role === "curator" || user.role === "admin") && (
                     <Link href="/dashboard" onClick={() => setMobileOpen(false)} className="flex items-center gap-3 rounded-lg px-4 py-3 text-sm min-h-[48px] hover:bg-gray-100 dark:hover:bg-gray-800 dark:text-gray-200 transition-colors">
                       Dashboard
                     </Link>
                   )}
                   {user.role === "admin" && (
-                    <Link href="/dashboard/admin" onClick={() => setMobileOpen(false)} className="flex items-center gap-3 rounded-lg px-4 py-3 text-sm min-h-[48px] hover:bg-gray-100 dark:hover:bg-gray-800 dark:text-gray-200 transition-colors">
-                      Admin Analytics
-                    </Link>
+                    <>
+                      <Link href="/dashboard/admin" onClick={() => setMobileOpen(false)} className="flex items-center gap-3 rounded-lg px-4 py-3 text-sm min-h-[48px] hover:bg-gray-100 dark:hover:bg-gray-800 dark:text-gray-200 transition-colors">
+                        Admin Dashboard
+                      </Link>
+                      <Link href="/dashboard/admin/users" onClick={() => setMobileOpen(false)} className="flex items-center gap-3 rounded-lg px-4 py-3 text-sm min-h-[48px] hover:bg-gray-100 dark:hover:bg-gray-800 dark:text-gray-200 transition-colors">
+                        User Management
+                      </Link>
+                      <Link href="/dashboard/admin/disputes" onClick={() => setMobileOpen(false)} className="flex items-center gap-3 rounded-lg px-4 py-3 text-sm min-h-[48px] hover:bg-gray-100 dark:hover:bg-gray-800 dark:text-gray-200 transition-colors">
+                        Disputes
+                      </Link>
+                      <Link href="/dashboard/admin/audit" onClick={() => setMobileOpen(false)} className="flex items-center gap-3 rounded-lg px-4 py-3 text-sm min-h-[48px] hover:bg-gray-100 dark:hover:bg-gray-800 dark:text-gray-200 transition-colors">
+                        Audit Log
+                      </Link>
+                    </>
                   )}
                   <button onClick={() => { logout(); setMobileOpen(false); }} className="flex items-center gap-3 rounded-lg px-4 py-3 text-sm min-h-[48px] text-red-600 hover:bg-red-50 dark:hover:bg-red-950 transition-colors w-full text-left">
                     Logout
